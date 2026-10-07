@@ -1,0 +1,31 @@
+{
+  "collection": "questions",
+  "notes": "Chỉ nhập câu hỏi do bạn có quyền sử dụng hoặc đã biên soạn hợp lệ; không sao chép tài liệu có bản quyền khi chưa được phép.",
+  "sources": [
+    {
+      "sourceId": "montoan-thpt",
+      "sourceName": "Môn Toán – Trung học phổ thông",
+      "sourceUrl": "https://montoan.com.vn/thpt-trung-hoc-pho-thong"
+    },
+    {
+      "sourceId": "tailieumontoan-thpt",
+      "sourceName": "Tài liệu Môn Toán – Toán THPT",
+      "sourceUrl": "https://tailieumontoan.com/tai-lieu-toan-thpt-1"
+    }
+  ],
+  "questionTemplate": {
+    "subject": "Toán",
+    "grade": 12,
+    "topic": "Ứng dụng đạo hàm",
+    "bookSeries": "Kết nối tri thức",
+    "content": "NỘI DUNG CÂU HỎI ĐƯỢC CẤP PHÉP SỬ DỤNG",
+    "options": ["Đáp án A", "Đáp án B", "Đáp án C", "Đáp án D"],
+    "correctOptionIndex": 0,
+    "difficulty": 2,
+    "explanation": "Giải thích đáp án nếu có",
+    "sourceId": "montoan-thpt",
+    "sourceName": "Môn Toán – Trung học phổ thông",
+    "sourceUrl": "https://montoan.com.vn/thpt-trung-hoc-pho-thong",
+    "createdBy": "teacher-or-import-user"
+  }
+}

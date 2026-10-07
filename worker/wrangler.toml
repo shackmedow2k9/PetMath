@@ -1,0 +1,12 @@
+name = "edupet-ai-tutor"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# FIREBASE_WEB_API_KEY không phải bí mật thật sự (đã nằm công khai trong
+# app ở lib/firebase_options.dart), nên để ở đây làm biến thường cho tiện.
+# Thay giá trị đúng bằng apiKey trong khối `web:` của firebase_options.dart.
+[vars]
+FIREBASE_WEB_API_KEY = "AIzaSyA89rddkyhlfQW4MT_LdwSQP1nZ33AvRoI"
+
+# GROQ_API_KEY là bí mật thật — KHÔNG khai báo ở đây. Set bằng lệnh:
+#   wrangler secret put GROQ_API_KEY

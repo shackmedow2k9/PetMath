@@ -1,0 +1,41 @@
+{
+  "flutter": {
+    "platforms": {
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "edupet-vn-khkt",
+          "configurations": {
+            "android": "1:270386460289:android:9c85160b5c2dea3e9a7f80",
+            "ios": "1:270386460289:ios:58531a374dbd4b529a7f80",
+            "macos": "1:270386460289:ios:ef12cb7e94a91ffd9a7f80",
+            "web": "1:270386460289:web:5c99590e1da709839a7f80",
+            "windows": "1:270386460289:web:76c4b4ddd418732c9a7f80"
+          }
+        }
+      },
+      "android": {
+        "default": {
+          "projectId": "edupet-vn-khkt",
+          "appId": "1:270386460289:android:9c85160b5c2dea3e9a7f80",
+          "fileOutput": "android/app/google-services.json"
+        }
+      }
+    }
+  },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log"
+      ]
+    }
+  ]
+}

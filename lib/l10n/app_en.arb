@@ -1,0 +1,230 @@
+{
+  "@@locale": "en",
+
+  "cancel": "Cancel",
+  "save": "Save",
+  "retry": "Retry",
+
+  "loginWelcomeTitle": "Welcome back!",
+  "loginWelcomeSubtitle": "Log in to keep taking care of your pet",
+  "emailLabel": "Email",
+  "emailInvalid": "Invalid email",
+  "passwordLabel": "Password",
+  "passwordTooShort": "At least 6 characters",
+  "loginButton": "Log in",
+  "noAccountRegister": "Don't have an account? Sign up",
+
+  "navPet": "Pet Home",
+  "navLearn": "Learn",
+  "navShop": "Shop",
+  "navMinigame": "Minigame",
+  "navProfile": "Profile",
+  "navClasses": "Classes",
+  "navQuestions": "Questions",
+  "navAccount": "Account",
+
+  "profileTitle": "My profile",
+  "accountSection": "Account",
+  "changeDisplayName": "Change display name",
+  "changePassword": "Change password",
+  "myClass": "My class",
+  "myClassJoined": "Joined a class — tap to view",
+  "myClassNotJoined": "Not added to any class yet",
+  "otherSection": "Other",
+  "achievements": "Achievements",
+  "achievementsUnlocked": "{unlocked}/{total} unlocked",
+  "@achievementsUnlocked": {
+    "placeholders": {
+      "unlocked": {"type": "int"},
+      "total": {"type": "int"}
+    }
+  },
+  "notifications": "Notifications",
+  "aboutEdupet": "About PetMath",
+  "logout": "Log out",
+  "logoutConfirmTitle": "Log out",
+  "logoutConfirmMessage": "Are you sure you want to log out?",
+  "streakDays": "{count} days",
+  "@streakDays": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+
+  "changeNameTitle": "Change display name",
+  "nameHint": "Display name",
+  "nameEmptyError": "Name cannot be empty",
+  "genericError": "Something went wrong: {error}",
+  "@genericError": {
+    "placeholders": {
+      "error": {"type": "Object"}
+    }
+  },
+
+  "changePasswordTitle": "Change password",
+  "currentPasswordLabel": "Current password",
+  "newPasswordLabel": "New password",
+  "confirmNewPasswordLabel": "Confirm new password",
+  "currentPasswordEmptyError": "Please enter your current password",
+  "newPasswordTooShortError": "New password must be at least 6 characters",
+  "passwordMismatchError": "Passwords do not match",
+  "changePasswordSuccess": "Password changed successfully!",
+  "wrongCurrentPasswordError": "Current password is incorrect",
+  "weakNewPasswordError": "New password is too weak",
+  "sessionExpiredError": "Your session has expired, please log out and log in again",
+  "tooManyAttemptsError": "Too many attempts, please try again later",
+  "genericAuthError": "Something went wrong, please try again",
+
+  "myClassTitle": "My class",
+  "loadingClassInfo": "Loading class info…",
+  "currentClassInfo": "You're in class: {className}",
+  "@currentClassInfo": {
+    "placeholders": {
+      "className": {"type": "String"}
+    }
+  },
+  "classNotFound": "(class not found)",
+  "joinClassPrompt": "Enter the class code your teacher gave you to join.",
+  "classCodeLabel": "Class code",
+  "changeClassLabel": "Enter a code to switch class",
+  "classCodeEmptyError": "Please enter a class code",
+  "invalidClassCodeError": "Wrong class code, please check again.",
+  "leaveClass": "Leave class",
+  "joinClass": "Join",
+
+  "language": "Language",
+  "chooseLanguageTitle": "Choose language",
+  "vietnamese": "Vietnamese",
+  "english": "English",
+
+  "aiTutor": "AI Tutor",
+  "askAiTutorAboutQuestion": "Ask the AI Tutor about this question",
+  "askAiTutorHint": "What would you like to ask the AI Tutor?",
+  "friendshipTitle": "Friendship",
+  "friendshipLevelLabel": "Friendship {level}",
+  "@friendshipLevelLabel": {
+    "placeholders": { "level": {"type": "String"} }
+  },
+  "friendshipProgress": "{points} / {next} points to next level",
+  "@friendshipProgress": {
+    "placeholders": { "points": {"type": "int"}, "next": {"type": "int"} }
+  },
+  "friendshipMaxedOut": "Max level reached! 🎉",
+  "friendshipPointsTotal": "{points} points",
+  "@friendshipPointsTotal": {
+    "placeholders": { "points": {"type": "int"} }
+  },
+  "friendshipRewardAiTutor": "Unlocks the AI Tutor",
+  "friendshipRewardPetStage": "Unlocks Pet stage {stage} (+{expPercent}% EXP)",
+  "@friendshipRewardPetStage": {
+    "placeholders": { "stage": {"type": "int"}, "expPercent": {"type": "int"} }
+  },
+  "friendshipRewardCoin": "+{percent}% Coins earned",
+  "@friendshipRewardCoin": {
+    "placeholders": { "percent": {"type": "int"} }
+  },
+  "friendshipRewardRanking": "Show yourself on the leaderboard",
+  "friendshipRewardCoinGem": "+{coin}% Coins, +{gem}% Diamonds",
+  "@friendshipRewardCoinGem": {
+    "placeholders": { "coin": {"type": "int"}, "gem": {"type": "int"} }
+  },
+  "friendshipHowTo": "Every pet care action (pat, feed, bathe, play, sleep) gives +{points} Friendship points.",
+  "@friendshipHowTo": {
+    "placeholders": { "points": {"type": "int"} }
+  },
+  "unlockedPetStage": "🎉 Pet stage {stage} unlocked!",
+  "@unlockedPetStage": {
+    "placeholders": { "stage": {"type": "int"} }
+  },
+  "unlockedAiTutor": "🤖 AI Tutor unlocked!",
+  "unlockedRanking": "🏆 You can now appear on the leaderboard!",
+  "unlockedCoinBonus": "💰 Coin bonus +{percent}%!",
+  "@unlockedCoinBonus": {
+    "placeholders": { "percent": {"type": "int"} }
+  },
+  "unlockedCoinGemBonus": "💎 Coin bonus +{coin}%, Diamond bonus +{gem}%!",
+  "@unlockedCoinGemBonus": {
+    "placeholders": { "coin": {"type": "int"}, "gem": {"type": "int"} }
+  },
+  "unlockedExpBonus": "⭐ EXP bonus +{percent}%!",
+  "@unlockedExpBonus": {
+    "placeholders": { "percent": {"type": "int"} }
+  },
+  "awesome": "Awesome!",
+  "skinBoxTitle": "Skin Blind Box",
+  "skinBoxSubtitle": "Open a box to get a random skin for your pet!",
+  "skinBoxPrice": "{price} Diamonds / open",
+  "@skinBoxPrice": {
+    "placeholders": { "price": {"type": "int"} }
+  },
+  "skinBoxOpen": "Open box",
+  "skinBoxOpening": "✨ Opening...",
+  "skinBoxNotEnoughGems": "You need {price} Diamonds to open a box. Not enough!",
+  "@skinBoxNotEnoughGems": {
+    "placeholders": { "price": {"type": "int"} }
+  },
+  "skinBoxError": "Could not open the box. Please try again!",
+  "skinBoxGot": "🎉 You got a {rarity} Skin!",
+  "@skinBoxGot": {
+    "placeholders": { "rarity": {"type": "String"} }
+  },
+  "skinBoxDuplicate": "You already own this skin! Refunded {coin} Coins.",
+  "@skinBoxDuplicate": {
+    "placeholders": { "coin": {"type": "int"} }
+  },
+  "skinBoxNewSkin": "New skin!",
+  "skinBoxOdds": "Drop rates",
+  "gemBalance": "Diamonds: {gem}",
+  "@gemBalance": {
+    "placeholders": { "gem": {"type": "String"} }
+  },
+  "equip": "Equip",
+  "equipped": "Equipped",
+  "unequipSkin": "Remove skin",
+  "equipFailed": "Cannot equip this skin",
+  "rarityCommon": "Common",
+  "rarityRare": "Rare",
+  "rarityEpic": "Epic",
+  "rarityLegendary": "Legendary",
+  "libraryTitle": "Pet Library",
+  "libraryPetTab": "Pets",
+  "librarySkinTab": "Skins",
+  "libraryStageName": "Stage {stage}",
+  "@libraryStageName": {
+    "placeholders": { "stage": {"type": "int"} }
+  },
+  "libraryStageLocked": "Unlocks at Friendship {level}",
+  "@libraryStageLocked": {
+    "placeholders": { "level": {"type": "String"} }
+  },
+  "librarySkinsOwned": "{owned}/{total} skins owned",
+  "@librarySkinsOwned": {
+    "placeholders": { "owned": {"type": "int"}, "total": {"type": "int"} }
+  },
+  "libraryLocked": "Locked",
+  "libraryCurrent": "Current",
+  "libraryOpenSkinBox": "Open Skin Blind Box",
+  "leaderboardHiddenNotice": "Reach Friendship {level} to appear on the leaderboard.",
+  "@leaderboardHiddenNotice": {
+    "placeholders": { "level": {"type": "String"} }
+  },
+  "skinBoxMenuHint": "Skins & Friendship",
+
+  "leaderboardTitle": "Leaderboard",
+  "leaderboardTabPetLevel": "Pet Level",
+  "leaderboardTabCoin": "Coins",
+  "leaderboardTabGem": "Diamonds",
+  "scopeClass": "Class",
+  "scopeSchool": "School",
+  "scopeProvince": "Province",
+  "scopeNational": "National",
+  "friendshipChip": "Friendship {level}",
+  "@friendshipChip": {
+    "placeholders": { "level": {"type": "String"} }
+  },
+
+  "skinRoomTitle": "Skin Room",
+  "skinRoomHint": "Tap an unlocked skin to dress your pet. Locked skins are shown in black.",
+  "skinRoomNoSkin": "Default",
+  "skinRoomGoBox": "Open boxes to get more skins"
+}

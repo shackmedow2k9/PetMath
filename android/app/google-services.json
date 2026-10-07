@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "270386460289",
+    "project_id": "edupet-vn-khkt",
+    "storage_bucket": "edupet-vn-khkt.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:270386460289:android:2f67cf4c82df3dc49a7f80",
+        "android_client_info": {
+          "package_name": "com.edupet.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD_FXOz75ZAa9PFWeQbItm62kg5WTnOY7o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:270386460289:android:9c85160b5c2dea3e9a7f80",
+        "android_client_info": {
+          "package_name": "com.example.edupet"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD_FXOz75ZAa9PFWeQbItm62kg5WTnOY7o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

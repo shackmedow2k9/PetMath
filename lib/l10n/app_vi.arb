@@ -1,0 +1,230 @@
+{
+  "@@locale": "vi",
+
+  "cancel": "Hủy",
+  "save": "Lưu",
+  "retry": "Thử tải lại",
+
+  "loginWelcomeTitle": "Chào mừng trở lại!",
+  "loginWelcomeSubtitle": "Đăng nhập để tiếp tục nuôi thú cưng nhé",
+  "emailLabel": "Email",
+  "emailInvalid": "Email không hợp lệ",
+  "passwordLabel": "Mật khẩu",
+  "passwordTooShort": "Tối thiểu 6 ký tự",
+  "loginButton": "Đăng nhập",
+  "noAccountRegister": "Chưa có tài khoản? Đăng ký ngay",
+
+  "navPet": "Nhà pet",
+  "navLearn": "Học tập",
+  "navShop": "Cửa hàng",
+  "navMinigame": "Minigame",
+  "navProfile": "Hồ sơ",
+  "navClasses": "Lớp học",
+  "navQuestions": "Câu hỏi",
+  "navAccount": "Tài khoản",
+
+  "profileTitle": "Hồ sơ của tôi",
+  "accountSection": "Tài khoản",
+  "changeDisplayName": "Đổi tên hiển thị",
+  "changePassword": "Đổi mật khẩu",
+  "myClass": "Lớp học của tôi",
+  "myClassJoined": "Đã tham gia lớp — chạm để xem",
+  "myClassNotJoined": "Chưa được thêm vào lớp nào",
+  "otherSection": "Khác",
+  "achievements": "Thành tựu",
+  "achievementsUnlocked": "{unlocked}/{total} đã mở khoá",
+  "@achievementsUnlocked": {
+    "placeholders": {
+      "unlocked": {"type": "int"},
+      "total": {"type": "int"}
+    }
+  },
+  "notifications": "Thông báo",
+  "aboutEdupet": "Về PetMath",
+  "logout": "Đăng xuất",
+  "logoutConfirmTitle": "Đăng xuất",
+  "logoutConfirmMessage": "Bạn có chắc muốn đăng xuất không?",
+  "streakDays": "{count} ngày",
+  "@streakDays": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+
+  "changeNameTitle": "Đổi tên hiển thị",
+  "nameHint": "Tên hiển thị",
+  "nameEmptyError": "Tên không được để trống",
+  "genericError": "Có lỗi xảy ra: {error}",
+  "@genericError": {
+    "placeholders": {
+      "error": {"type": "Object"}
+    }
+  },
+
+  "changePasswordTitle": "Đổi mật khẩu",
+  "currentPasswordLabel": "Mật khẩu hiện tại",
+  "newPasswordLabel": "Mật khẩu mới",
+  "confirmNewPasswordLabel": "Xác nhận mật khẩu mới",
+  "currentPasswordEmptyError": "Vui lòng nhập mật khẩu hiện tại",
+  "newPasswordTooShortError": "Mật khẩu mới phải có ít nhất 6 ký tự",
+  "passwordMismatchError": "Mật khẩu xác nhận không khớp",
+  "changePasswordSuccess": "Đổi mật khẩu thành công!",
+  "wrongCurrentPasswordError": "Mật khẩu hiện tại không đúng",
+  "weakNewPasswordError": "Mật khẩu mới quá yếu",
+  "sessionExpiredError": "Phiên đăng nhập đã cũ, vui lòng đăng xuất rồi đăng nhập lại",
+  "tooManyAttemptsError": "Bạn thử quá nhiều lần, vui lòng thử lại sau",
+  "genericAuthError": "Đã có lỗi xảy ra, vui lòng thử lại",
+
+  "myClassTitle": "Lớp học của tôi",
+  "loadingClassInfo": "Đang tải thông tin lớp…",
+  "currentClassInfo": "Bạn đang ở lớp: {className}",
+  "@currentClassInfo": {
+    "placeholders": {
+      "className": {"type": "String"}
+    }
+  },
+  "classNotFound": "(không tìm thấy lớp)",
+  "joinClassPrompt": "Nhập mã lớp giáo viên cung cấp để tham gia lớp học.",
+  "classCodeLabel": "Mã lớp",
+  "changeClassLabel": "Nhập mã để chuyển lớp khác",
+  "classCodeEmptyError": "Vui lòng nhập mã lớp",
+  "invalidClassCodeError": "Mã lớp không đúng, vui lòng kiểm tra lại.",
+  "leaveClass": "Rời lớp",
+  "joinClass": "Tham gia",
+
+  "language": "Ngôn ngữ",
+  "chooseLanguageTitle": "Chọn ngôn ngữ",
+  "vietnamese": "Tiếng Việt",
+  "english": "Tiếng Anh",
+
+  "aiTutor": "Gia sư AI",
+  "askAiTutorAboutQuestion": "Hỏi gia sư AI về câu này",
+  "askAiTutorHint": "Em muốn hỏi gia sư AI điều gì?",
+  "friendshipTitle": "Thân thiết",
+  "friendshipLevelLabel": "Thân thiết {level}",
+  "@friendshipLevelLabel": {
+    "placeholders": { "level": {"type": "String"} }
+  },
+  "friendshipProgress": "{points} / {next} điểm đến mức kế tiếp",
+  "@friendshipProgress": {
+    "placeholders": { "points": {"type": "int"}, "next": {"type": "int"} }
+  },
+  "friendshipMaxedOut": "Đã đạt mức tối đa! 🎉",
+  "friendshipPointsTotal": "{points} điểm",
+  "@friendshipPointsTotal": {
+    "placeholders": { "points": {"type": "int"} }
+  },
+  "friendshipRewardAiTutor": "Mở khoá Gia sư AI",
+  "friendshipRewardPetStage": "Mở khoá Pet cấp {stage} (+{expPercent}% EXP)",
+  "@friendshipRewardPetStage": {
+    "placeholders": { "stage": {"type": "int"}, "expPercent": {"type": "int"} }
+  },
+  "friendshipRewardCoin": "+{percent}% Coin nhận được",
+  "@friendshipRewardCoin": {
+    "placeholders": { "percent": {"type": "int"} }
+  },
+  "friendshipRewardRanking": "Hiện bạn trên bảng xếp hạng",
+  "friendshipRewardCoinGem": "+{coin}% Coin, +{gem}% Kim cương",
+  "@friendshipRewardCoinGem": {
+    "placeholders": { "coin": {"type": "int"}, "gem": {"type": "int"} }
+  },
+  "friendshipHowTo": "Mỗi lần chăm sóc pet (vuốt ve, cho ăn, tắm, chơi, ngủ) được +{points} điểm Thân thiết.",
+  "@friendshipHowTo": {
+    "placeholders": { "points": {"type": "int"} }
+  },
+  "unlockedPetStage": "🎉 Đã mở khoá Pet cấp {stage}!",
+  "@unlockedPetStage": {
+    "placeholders": { "stage": {"type": "int"} }
+  },
+  "unlockedAiTutor": "🤖 Gia sư AI đã được mở khoá!",
+  "unlockedRanking": "🏆 Bạn đã có thể xuất hiện trên bảng xếp hạng!",
+  "unlockedCoinBonus": "💰 Bonus Coin +{percent}%!",
+  "@unlockedCoinBonus": {
+    "placeholders": { "percent": {"type": "int"} }
+  },
+  "unlockedCoinGemBonus": "💎 Bonus Coin +{coin}%, Kim cương +{gem}%!",
+  "@unlockedCoinGemBonus": {
+    "placeholders": { "coin": {"type": "int"}, "gem": {"type": "int"} }
+  },
+  "unlockedExpBonus": "⭐ Bonus EXP +{percent}%!",
+  "@unlockedExpBonus": {
+    "placeholders": { "percent": {"type": "int"} }
+  },
+  "awesome": "Tuyệt vời!",
+  "skinBoxTitle": "Hộp mù Skin",
+  "skinBoxSubtitle": "Mở hộp để nhận ngẫu nhiên 1 skin cho pet của bạn!",
+  "skinBoxPrice": "{price} Kim cương / lần mở",
+  "@skinBoxPrice": {
+    "placeholders": { "price": {"type": "int"} }
+  },
+  "skinBoxOpen": "Mở hộp",
+  "skinBoxOpening": "✨ Đang mở...",
+  "skinBoxNotEnoughGems": "Cần {price} Kim cương để mở hộp. Bạn chưa đủ!",
+  "@skinBoxNotEnoughGems": {
+    "placeholders": { "price": {"type": "int"} }
+  },
+  "skinBoxError": "Không mở được hộp. Thử lại nhé!",
+  "skinBoxGot": "🎉 Bạn nhận được Skin {rarity}!",
+  "@skinBoxGot": {
+    "placeholders": { "rarity": {"type": "String"} }
+  },
+  "skinBoxDuplicate": "Skin này bạn đã có! Nhận lại {coin} Coin.",
+  "@skinBoxDuplicate": {
+    "placeholders": { "coin": {"type": "int"} }
+  },
+  "skinBoxNewSkin": "Skin mới!",
+  "skinBoxOdds": "Tỷ lệ rơi",
+  "gemBalance": "Kim cương: {gem}",
+  "@gemBalance": {
+    "placeholders": { "gem": {"type": "String"} }
+  },
+  "equip": "Trang bị",
+  "equipped": "Đang trang bị",
+  "unequipSkin": "Tháo skin",
+  "equipFailed": "Không thể trang bị skin này",
+  "rarityCommon": "Thường",
+  "rarityRare": "Hiếm",
+  "rarityEpic": "Sử thi",
+  "rarityLegendary": "Huyền thoại",
+  "libraryTitle": "Thư viện Pet",
+  "libraryPetTab": "Pet",
+  "librarySkinTab": "Skin",
+  "libraryStageName": "Cấp {stage}",
+  "@libraryStageName": {
+    "placeholders": { "stage": {"type": "int"} }
+  },
+  "libraryStageLocked": "Mở ở Thân thiết {level}",
+  "@libraryStageLocked": {
+    "placeholders": { "level": {"type": "String"} }
+  },
+  "librarySkinsOwned": "{owned}/{total} skin đã sở hữu",
+  "@librarySkinsOwned": {
+    "placeholders": { "owned": {"type": "int"}, "total": {"type": "int"} }
+  },
+  "libraryLocked": "Chưa mở khoá",
+  "libraryCurrent": "Hiện tại",
+  "libraryOpenSkinBox": "Mở Hộp mù Skin",
+  "leaderboardHiddenNotice": "Đạt Thân thiết {level} để tên bạn xuất hiện trên bảng xếp hạng.",
+  "@leaderboardHiddenNotice": {
+    "placeholders": { "level": {"type": "String"} }
+  },
+  "skinBoxMenuHint": "Skin & Thân thiết",
+
+  "leaderboardTitle": "Bảng xếp hạng",
+  "leaderboardTabPetLevel": "Cấp Pet",
+  "leaderboardTabCoin": "Xu",
+  "leaderboardTabGem": "Kim cương",
+  "scopeClass": "Lớp",
+  "scopeSchool": "Trường",
+  "scopeProvince": "Tỉnh",
+  "scopeNational": "Toàn quốc",
+  "friendshipChip": "Thân thiết {level}",
+  "@friendshipChip": {
+    "placeholders": { "level": {"type": "String"} }
+  },
+
+  "skinRoomTitle": "Phòng đổi skin",
+  "skinRoomHint": "Chạm vào skin đã mở khoá để mặc cho pet. Skin chưa mở sẽ hiện màu đen.",
+  "skinRoomNoSkin": "Mặc định",
+  "skinRoomGoBox": "Mở hộp để nhận thêm skin"
+}

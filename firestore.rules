@@ -1,0 +1,181 @@
+rules_version = '2';
+
+// Quy tắc bảo mật cơ bản theo 4 cấp quyền: Admin > Nhà sản xuất > Giáo viên > Học sinh
+// Cần tinh chỉnh thêm khi có custom claims thật (set qua Cloud Functions khi tạo tài khoản).
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function hasRole(role) {
+      return isSignedIn() && request.auth.token.role == role;
+    }
+
+    // QUAN TRỌNG: dự án hiện KHÔNG có Cloud Function nào gọi
+    // `setCustomUserClaims`, nên `hasRole('teacher')` (dựa vào custom claim
+    // `request.auth.token.role`) sẽ LUÔN LUÔN false trong thực tế — mọi thao
+    // tác ghi của Giáo viên (tạo lớp, tạo câu hỏi, thưởng/phạt học sinh...)
+    // sẽ bị từ chối quyền nếu chỉ dựa vào hasRole('teacher'). Dùng thêm cách
+    // kiểm tra qua sự tồn tại của document `teachers/{uid}` (được tạo lúc
+    // đăng ký) làm giải pháp thay thế cho tới khi có Cloud Function set
+    // custom claims thật.
+    function isTeacher() {
+      return hasRole('teacher') ||
+          (isSignedIn() &&
+              exists(/databases/$(database)/documents/teachers/$(request.auth.uid)));
+    }
+
+    // Học sinh: đọc rộng cho mọi user đã đăng nhập (BẮT BUỘC — Bảng xếp
+    // hạng cần query nhiều học sinh cùng lúc, Firestore Rules không cho
+    // phép 1 query "list" chạy nếu có bất kỳ document nào trong kết quả
+    // mà rule không cho đọc). Ghi thì vẫn giới hạn: chỉ chính chủ hoặc
+    // giáo viên mới sửa được, để bảo vệ dữ liệu (coin, gem, streak...).
+    //
+    // LƯU Ý BẢO MẬT: cách này để lộ TOÀN BỘ field của student (kể cả
+    // email, coin, gem...) cho bất kỳ ai đã đăng nhập xem được — chấp
+    // nhận được với quy mô nhỏ/demo. Nếu cần chặt chẽ hơn sau này, nên
+    // tách riêng 1 collection "leaderboard" chỉ chứa field công khai
+    // (fullName, petLevel, petLevelUpAt, classId, schoolId) và cho đọc
+    // rộng ở đó thay vì mở toàn bộ collection students.
+    match /students/{studentId} {
+      allow read: if isSignedIn();
+      allow create: if isOwner(studentId);
+      allow update: if isOwner(studentId) || isTeacher();
+      allow delete: if hasRole('admin');
+    }
+
+    // Lịch sử thưởng/phạt Coin/Gem do Giáo viên thực hiện — chỉ Giáo viên
+    // được ghi (đọc thì cho cả chính học sinh xem để biết vì sao coin/gem
+    // thay đổi, và Giáo viên/Admin xem lại được).
+    match /students/{studentId}/rewardLogs/{logId} {
+      allow read: if isOwner(studentId) || isTeacher() || hasRole('admin');
+      allow create: if isTeacher();
+    }
+
+    // Pet: chỉ chủ sở hữu (qua Cloud Functions cho các thao tác cộng EXP quan trọng)
+    match /pets/{petId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // Giáo viên: quản lý lớp học của chính mình
+    match /teachers/{teacherId} {
+      allow read, write: if isOwner(teacherId) || hasRole('admin');
+    }
+
+    match /classes/{classId} {
+      allow read: if isSignedIn();
+      allow create: if isTeacher() && request.resource.data.teacherId == request.auth.uid;
+      allow update, delete: if hasRole('admin') ||
+          (isTeacher() && resource.data.teacherId == request.auth.uid);
+    }
+
+    // Bài tập giáo viên giao cho 1 lớp. Giáo viên sở hữu (teacherId ==
+    // uid) toàn quyền sửa/xoá; học sinh trong lớp chỉ được phép cập nhật
+    // field `results` (để nộp kết quả bài làm của CHÍNH mình) — Rules
+    // không kiểm tra được key con cụ thể trong map `results` nên đây là
+    // đánh đổi chấp nhận được ở quy mô nhỏ/demo, tương tự lưu ý ở collection
+    // `students` phía trên.
+    match /assignments/{assignmentId} {
+      // Giáo viên/Admin xem toàn bộ lịch sử; học sinh xem tất cả bài tập
+      // của lớp mình (KHÔNG giới hạn theo createdAt ở đây).
+      //
+      // LƯU Ý QUAN TRỌNG: đây là quy tắc cho 1 "list" query
+      // (watchStudentAssignments trong firestore_service.dart chỉ
+      // .where('classId', isEqualTo: ...), KHÔNG lọc thêm theo createdAt
+      // để tránh phải tạo composite index). Với list query, Firestore
+      // Rules bắt buộc MỌI document có thể khớp câu query đều phải pass
+      // rule — nếu rule ở đây còn đòi createdAt trong vòng 7 ngày thì chỉ
+      // cần lớp có 1 bài tập cũ hơn 7 ngày là request bị từ chối
+      // TOÀN BỘ (permission-denied), dù các bài mới vẫn hợp lệ. Đây
+      // chính là lỗi "Không tải được bài tập" đã gặp. Việc ẩn bài tập
+      // quá hạn hiển thị (theo visibilityDays) đã được lọc riêng ở phía
+      // Dart qua AssignmentModel.isVisibleToStudent, nên rule đọc chỉ
+      // cần kiểm tra học sinh có đúng lớp hay không là đủ.
+      allow read: if (isTeacher() || hasRole('admin')) ||
+          (isSignedIn() &&
+              get(/databases/$(database)/documents/students/$(request.auth.uid)).data.classId == resource.data.classId);
+      allow create: if isTeacher() && request.resource.data.teacherId == request.auth.uid;
+      // Ghi kết quả (update) là thao tác trên 1 document đơn lẻ (không
+      // phải "list") nên không bị lỗi all-or-nothing như trên — vẫn giữ
+      // giới hạn thời gian để học sinh không nộp bài vào bài tập đã hết
+      // hạn, nhưng dùng đúng visibilityDays của từng bài (mặc định 7 nếu
+      // field không tồn tại) thay vì hardcode 7 ngày, để khớp với
+      // AssignmentModel.isVisibleToStudent phía Dart.
+      allow update: if (isTeacher() && resource.data.teacherId == request.auth.uid) ||
+          (isSignedIn() &&
+              get(/databases/$(database)/documents/students/$(request.auth.uid)).data.classId == resource.data.classId &&
+              resource.data.createdAt >= request.time - duration.value(resource.data.get('visibilityDays', 7), 'd') &&
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['results']));
+      allow delete: if hasRole('admin') ||
+          (isTeacher() && resource.data.teacherId == request.auth.uid);
+    }
+
+    // Danh mục trường học tự xây dựng dần từ người dùng (theo từng xã/phường).
+    // Cho đọc công khai vì cần gợi ý tên trường ngay trong lúc đăng ký,
+    // khi người dùng CHƯA đăng nhập. Chỉ cho ghi khi đã đăng nhập (tức là
+    // sau khi tài khoản vừa được tạo xong).
+    match /schools/{schoolId} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // Nhà sản xuất: quản lý nội dung (môn học, câu hỏi, vật phẩm, sự kiện)
+    match /items/{itemId} {
+      allow read: if isSignedIn();
+      allow write: if hasRole('producer') || hasRole('admin');
+    }
+
+    match /examResults/{resultId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.studentId == request.auth.uid;
+    }
+
+    // Tiến độ Toán THPT theo học sinh và khối. App ghi dữ liệu sau khi
+    // học sinh hoàn thành một phiên làm bài; đọc rộng tương tự students để
+    // phù hợp với cấu trúc demo hiện tại.
+    match /mathProgress/{progressId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() &&
+          request.resource.data.studentId == request.auth.uid;
+    }
+
+    match /questions/{questionId} {
+      allow read: if isSignedIn();
+      allow create: if isTeacher() || hasRole('producer') || hasRole('admin');
+      // Câu hỏi hệ thống/mẫu (do Nhà sản xuất tạo) thì Nhà sản xuất/Admin sửa;
+      // câu hỏi trong Ngân hàng câu hỏi của Giáo viên thì chỉ chính giáo
+      // viên đã tạo (createdBy == uid) mới được sửa/xoá.
+      allow update, delete: if hasRole('producer') || hasRole('admin') ||
+          (isTeacher() && resource.data.createdBy == request.auth.uid);
+    }
+
+    match /events/{eventId} {
+      allow read: if isSignedIn();
+      allow write: if hasRole('producer') || hasRole('admin');
+    }
+
+    // Thông báo cập nhật/tin tức chung của app (xem Cloud Function
+    // onAnnouncementCreated trong functions/index.js — tự gửi push tới
+    // topic 'app_updates' khi có document mới ở đây). Giáo viên/Admin
+    // được tạo; học sinh chỉ đọc (không cần thiết vì app hiện không có
+    // màn hình liệt kê thông báo cũ, nhưng để sẵn phòng khi cần).
+    match /announcements/{announcementId} {
+      allow read: if isSignedIn();
+      allow create: if isTeacher() || hasRole('admin');
+      allow update, delete: if hasRole('admin');
+    }
+
+    // Admin: toàn quyền
+    match /{document=**} {
+      allow read, write: if hasRole('admin');
+    }
+  }
+}

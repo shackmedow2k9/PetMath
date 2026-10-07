@@ -1,0 +1,83 @@
+name: edupet
+description: "PetMath - Learn - Play - Grow. Ứng dụng học tập kết hợp nuôi thú cưng."
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # Firebase
+  firebase_core: ^3.6.0
+  firebase_auth: ^5.3.1
+  cloud_firestore: ^5.4.4
+  firebase_storage: ^12.3.4
+  firebase_messaging: ^15.1.3
+  flutter_local_notifications: ^18.0.1
+
+  # State management
+  provider: ^6.1.2
+
+  # UI
+  cupertino_icons: ^1.0.8
+  google_fonts: ^6.2.1
+  lottie: ^3.1.3
+  flutter_svg: ^2.0.10+1
+  flutter_math_fork: ^0.7.4
+  percent_indicator: ^4.2.3
+  confetti: ^0.7.0
+
+  # Utils
+  intl: ^0.20.2
+  shared_preferences: ^2.3.2
+  uuid: ^4.5.1
+  http: ^1.2.2
+  file_picker: ^12.0.0
+  archive: ^4.0.7
+  xml: ^6.6.1
+
+  # 3D WebGL viewport
+  three_js: ^0.3.0
+  three_js_helpers: ^0.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  generate: true
+  assets:
+    - assets/images/
+    - assets/images/houses/
+    - assets/images/houses/rooms/wood/
+    - assets/images/houses/rooms/tree/
+    - assets/images/houses/rooms/mushroom/
+    - assets/images/houses/rooms/gingerbread/
+    - assets/images/houses/rooms/tech/
+    - assets/images/houses/rooms/castle/
+    - assets/images/fishing/
+    - assets/images/farm/
+    - assets/pets/
+    - assets/pets_v2/bunny/
+    - assets/pets_v2/cat/
+    - assets/pets_v2/chicken/
+    - assets/pets_v2/dog/
+    - assets/pets_v2/dragon/
+    - assets/pets_v2/kitsune/
+    - assets/pets_v2/panda/
+    - assets/pets_v2/robot/
+    - assets/pets_v2/slime/
+    - assets/pets_v2/whale/
+    - assets/ui/
+    - assets/images/pet_skins/panda/
+    - assets/animations/
+    - assets/icons/
+    - assets/food/
+    - assets/vietnamese_lexicon/
