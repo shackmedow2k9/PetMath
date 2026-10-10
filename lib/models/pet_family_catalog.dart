@@ -7,18 +7,7 @@ import 'pet_model.dart';
 /// [PetSpecies] có đúng 10 giá trị cùng tên với 10 họ này; Firestore lưu tên
 /// loài. Tên loài của bản cũ (40 loài) được quy đổi trong
 /// [petSpeciesFromStored] khi đọc dữ liệu.
-enum PetFamily {
-  bunny,
-  cat,
-  chicken,
-  dog,
-  dragon,
-  kitsune,
-  panda,
-  robot,
-  slime,
-  whale
-}
+enum PetFamily { bunny, cat, chicken, dog, dragon, kitsune, panda, robot, slime, whale }
 
 /// Một skin của một họ pet. [id] dạng `dragon_03` (lưu trong Firestore).
 class PetSkin {
@@ -53,19 +42,12 @@ class PetArt {
   /// [skinIdle] trả về chính ảnh thẻ để app vẫn chạy; khi có sprite thật chỉ
   /// cần thêm file `lvlN_idle.png` / `skinNN_idle.png` và xoá họ khỏi 2 set này.
   static const Set<PetFamily> levelIdleIsCard = {
-    PetFamily.bunny,
-    PetFamily.chicken,
-    PetFamily.dog,
-    PetFamily.kitsune,
-    PetFamily.whale,
+    PetFamily.bunny, PetFamily.chicken, PetFamily.dog,
+    PetFamily.kitsune, PetFamily.whale,
   };
   static const Set<PetFamily> skinIdleIsCard = {
-    PetFamily.bunny,
-    PetFamily.chicken,
-    PetFamily.dog,
-    PetFamily.kitsune,
-    PetFamily.slime,
-    PetFamily.whale,
+    PetFamily.bunny, PetFamily.chicken, PetFamily.dog,
+    PetFamily.kitsune, PetFamily.slime, PetFamily.whale,
   };
 
   static int _clampStage(int s) => s < 1 ? 1 : (s > 5 ? 5 : s);
@@ -89,13 +71,10 @@ class PetArt {
   static String idleFor(PetModel pet) {
     final family = PetFamilyCatalog.familyOf(pet.species);
     final skin = PetFamilyCatalog.skinById(pet.equippedSkin);
-    if (skin != null &&
-        skin.family == family &&
-        pet.unlockedSkins.contains(skin.id)) {
+    if (skin != null && skin.family == family && pet.unlockedSkins.contains(skin.id)) {
       return skinIdle(skin);
     }
-    return stageIdle(
-        family, FriendshipInfo.fromPoints(pet.affectionPoints).petStage);
+    return stageIdle(family, FriendshipInfo.fromPoints(pet.affectionPoints).petStage);
   }
 }
 
@@ -114,90 +93,51 @@ class PetFamilyCatalog {
   /// Thường, "Thượng Hạng" gộp vào Sử thi). Mỗi họ PHẢI có ≥ 1 skin ở mỗi
   /// độ hiếm để weighted random luôn có skin để chọn.
   static const List<SkinRarity> _defaultRarity = [
-    SkinRarity.common,
-    SkinRarity.common,
-    SkinRarity.rare,
-    SkinRarity.rare,
-    SkinRarity.rare,
-    SkinRarity.epic,
-    SkinRarity.epic,
-    SkinRarity.legendary,
-    SkinRarity.legendary,
-    SkinRarity.legendary,
+    SkinRarity.common, SkinRarity.common,
+    SkinRarity.rare, SkinRarity.rare, SkinRarity.rare,
+    SkinRarity.epic, SkinRarity.epic,
+    SkinRarity.legendary, SkinRarity.legendary, SkinRarity.legendary,
   ];
   static const List<SkinRarity> _dragonRarity = [
-    SkinRarity.common,
-    SkinRarity.common,
-    SkinRarity.common,
-    SkinRarity.common,
-    SkinRarity.rare,
-    SkinRarity.rare,
-    SkinRarity.epic,
-    SkinRarity.epic,
-    SkinRarity.legendary,
-    SkinRarity.legendary,
+    SkinRarity.common, SkinRarity.common, SkinRarity.common, SkinRarity.common,
+    SkinRarity.rare, SkinRarity.rare,
+    SkinRarity.epic, SkinRarity.epic,
+    SkinRarity.legendary, SkinRarity.legendary,
   ];
 
   /// Tên skin (vi, en) theo họ — đúng thứ tự số thứ tự 1..10.
   static const List<List<String>> _themeA = [
-    ['Cổ điển', 'Classic'],
-    ['Khủng Long', 'Dino'],
-    ['Thám Tử', 'Detective'],
-    ['Ninja', 'Ninja'],
-    ['Vũ Trụ', 'Astronaut'],
-    ['Cổ Trang', 'Traditional'],
-    ['Chiến Thần', 'War God'],
-    ['Hỏa Long', 'Fire Dragon'],
-    ['Băng Tuyết', 'Frost'],
-    ['Thiên Sứ', 'Angel'],
+    ['Cổ điển', 'Classic'], ['Khủng Long', 'Dino'], ['Thám Tử', 'Detective'],
+    ['Ninja', 'Ninja'], ['Vũ Trụ', 'Astronaut'], ['Cổ Trang', 'Traditional'],
+    ['Chiến Thần', 'War God'], ['Hỏa Long', 'Fire Dragon'],
+    ['Băng Tuyết', 'Frost'], ['Thiên Sứ', 'Angel'],
   ];
   static const List<List<String>> _themeB = [
-    ['Tinh Nghịch', 'Playful'],
-    ['Khám Phá', 'Explorer'],
-    ['Thám Tử', 'Detective'],
-    ['Siêu Anh Hùng', 'Superhero'],
-    ['Vũ Trụ', 'Astronaut'],
-    ['Công Chúa', 'Princess'],
-    ['Samurai', 'Samurai'],
-    ['Hỏa Long', 'Fire Dragon'],
-    ['Băng Tuyết', 'Frost'],
-    ['Thiên Sứ', 'Angel'],
+    ['Tinh Nghịch', 'Playful'], ['Khám Phá', 'Explorer'], ['Thám Tử', 'Detective'],
+    ['Siêu Anh Hùng', 'Superhero'], ['Vũ Trụ', 'Astronaut'], ['Công Chúa', 'Princess'],
+    ['Samurai', 'Samurai'], ['Hỏa Long', 'Fire Dragon'],
+    ['Băng Tuyết', 'Frost'], ['Thiên Sứ', 'Angel'],
   ];
   static const List<List<String>> _dragonNames = [
-    ['Kim Long Đại Đế', 'Golden Dragon Emperor'],
-    ['Hỏa Long Thần Hỏa', 'Inferno Dragon'],
-    ['Băng Tinh Thần Long', 'Crystal Frost Dragon'],
-    ['Địa Nham Tượng Long', 'Stone Dragon'],
-    ['Hải Thần Thủy Long', 'Sea God Dragon'],
-    ['Ám Ảnh Ma Long', 'Shadow Dragon'],
-    ['Thần Linh Mộc Long', 'Forest Spirit Dragon'],
-    ['Hư Không Dục Long', 'Void Dragon'],
-    ['Quang Minh Thần Long', 'Radiant Dragon'],
-    ['Tinh Không Đế Vương', 'Cosmic Emperor'],
+    ['Kim Long Đại Đế', 'Golden Dragon Emperor'], ['Hỏa Long Thần Hỏa', 'Inferno Dragon'],
+    ['Băng Tinh Thần Long', 'Crystal Frost Dragon'], ['Địa Nham Tượng Long', 'Stone Dragon'],
+    ['Hải Thần Thủy Long', 'Sea God Dragon'], ['Ám Ảnh Ma Long', 'Shadow Dragon'],
+    ['Thần Linh Mộc Long', 'Forest Spirit Dragon'], ['Hư Không Dục Long', 'Void Dragon'],
+    ['Quang Minh Thần Long', 'Radiant Dragon'], ['Tinh Không Đế Vương', 'Cosmic Emperor'],
   ];
   static const List<List<String>> _kitsuneNames = [
-    ['Cửu Vĩ Thiên Tiên', 'Celestial Kitsune'],
-    ['Cửu Vĩ Đấu Sĩ', 'Warrior Kitsune'],
-    ['Cửu Vĩ Tân Nương', 'Bride Kitsune'],
-    ['Cửu Vĩ Hoa Mai', 'Blossom Kitsune'],
-    ['Cửu Vĩ Thần Thú', 'Divine Kitsune'],
-    ['Cửu Vĩ Tuyết Sơn', 'Snow Kitsune'],
-    ['Cửu Vĩ Hỏa Diệm', 'Flame Kitsune'],
-    ['Cửu Vĩ Ma Hồ', 'Demon Kitsune'],
-    ['Cửu Vĩ Lôi Đỉnh', 'Thunder Kitsune'],
-    ['Cửu Vĩ Thiên Hà', 'Galaxy Kitsune'],
+    ['Cửu Vĩ Thiên Tiên', 'Celestial Kitsune'], ['Cửu Vĩ Đấu Sĩ', 'Warrior Kitsune'],
+    ['Cửu Vĩ Tân Nương', 'Bride Kitsune'], ['Cửu Vĩ Hoa Mai', 'Blossom Kitsune'],
+    ['Cửu Vĩ Thần Thú', 'Divine Kitsune'], ['Cửu Vĩ Tuyết Sơn', 'Snow Kitsune'],
+    ['Cửu Vĩ Hỏa Diệm', 'Flame Kitsune'], ['Cửu Vĩ Ma Hồ', 'Demon Kitsune'],
+    ['Cửu Vĩ Lôi Đỉnh', 'Thunder Kitsune'], ['Cửu Vĩ Thiên Hà', 'Galaxy Kitsune'],
   ];
   static const List<List<String>> _slimeNames = [
-    ['Xanh Cơ Bản', 'Basic Green'],
-    ['Bống Bóng Bọc', 'Bubble'],
-    ['Tuyết Băng', 'Snow Ice'],
-    ['Nham Thạch', 'Magma'],
-    ['Thợ Săn', 'Hunter'],
-    ['Ninja Bóng Đêm', 'Night Ninja'],
-    ['Giải Mã Dữ Liệu', 'Data Decoder'],
-    ['Ngân Hoa', 'Silver Bloom'],
-    ['Vua Slime', 'Slime King'],
-    ['Tinh Không', 'Starry Void'],
+    ['Xanh Cơ Bản', 'Basic Green'], ['Bống Bóng Bọc', 'Bubble'],
+    ['Tuyết Băng', 'Snow Ice'], ['Nham Thạch', 'Magma'],
+    ['Thợ Săn', 'Hunter'], ['Ninja Bóng Đêm', 'Night Ninja'],
+    ['Giải Mã Dữ Liệu', 'Data Decoder'], ['Ngân Hoa', 'Silver Bloom'],
+    ['Vua Slime', 'Slime King'], ['Tinh Không', 'Starry Void'],
   ];
 
   static List<List<String>> _namesOf(PetFamily f) {

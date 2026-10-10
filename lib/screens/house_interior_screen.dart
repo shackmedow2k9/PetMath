@@ -1,53 +1,47 @@
 import 'dart:async';
 import 'dart:math';
-import 'dart:ui';
 import 'package:flutter/material.dart' hide Text;
-import '../l10n/tr.dart';
-import '../widgets/tr_text.dart';
 import 'package:provider/provider.dart';
+import '../l10n/tr.dart';
 import '../models/food_catalog.dart';
 import '../models/house_catalog.dart';
+import '../models/house_decor_catalog.dart';
+import '../models/house_quest_catalog.dart';
 import '../models/item_model.dart';
-import '../models/pet_family_catalog.dart';
+import '../models/pet_activity_catalog.dart';
 import '../models/pet_model.dart';
 import '../models/room_data.dart';
-import '../models/student_model.dart';
 import '../providers/auth_provider.dart';
 import '../providers/pet_provider.dart';
 import '../services/firestore_service.dart';
-import '../widgets/emoji_icon.dart';
-import '../widgets/pet_care_dock.dart';
-import '../models/pet_activity_catalog.dart';
-import 'pet_library_screen.dart';
-import 'skin_box_screen.dart';
-import '../widgets/friendship_widgets.dart';
+import '../services/house_extras_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/emoji_icon.dart';
+import '../widgets/friendship_widgets.dart';
+import '../widgets/house/house_ambience.dart';
+import '../widgets/house/house_hud.dart';
+import '../widgets/house/house_overlays.dart';
+import '../widgets/house/house_panels.dart';
+import '../widgets/house/house_pet_sprite.dart';
+import '../widgets/pet_care_dock.dart' show MenuTile, PetActivitiesSheet;
 import '../widgets/skin_room_sheet.dart';
-import 'shop_screen.dart';
-import 'minigame_hub_screen.dart';
+import '../widgets/tr_text.dart';
 import 'leaderboard_screen.dart';
+import 'minigame_hub_screen.dart';
+import 'pet_library_screen.dart';
+import 'shop_screen.dart';
+import 'skin_box_screen.dart';
 
-/// Pet đang làm gì lúc này — quyết định animation nào đang chạy và có
-/// cho phép chạm/kéo hay không.
-enum PetActivity {
-  idle,
-  dragging,
-  walking,
-  sleeping,
-  eating,
-  turning, // quay mặt qua lại tại chỗ
-  hopping, // nhảy nhẹ tại chỗ vài lần
-  spinning, // xoay vòng tại chỗ kiểu mèo đuổi đuôi
-  bigJump, // nhảy 1 đoạn cao tại chỗ
-  bathing, // đang tắm, có bọt xà phòng
-  playing, // chơi trực tiếp với chủ
-  toileting, // đi vệ sinh
-}
-
-/// "Nhà của pet" kiểu Talking Tom: bước vào Phòng ngủ trước, có thể lướt
-/// sang Nhà tắm / Phòng ăn. Pet là 1 sprite 2D sống động: tự đi dạo lung
-/// tung quanh nhà khi rảnh, kéo thả được (thả ra rơi bịch xuống kiểu
-/// slime), chạm vào thì nhảy lắc chân, có thể dơ dần rồi cần tắm.
+/// Nhà của pet (bản mới): 3 phòng (Phòng ngủ / Nhà tắm / Phòng ăn), pet 2D
+/// tự đi dạo, chạm để vuốt ve, kéo thả được.
+///
+/// Điểm mới so với bản cũ:
+///  • Giao diện gọn: 1 thẻ trạng thái + dock 6 nút + cột tiện ích bên phải.
+///  • Chăm sóc nhanh: banner gợi ý việc cấp bách nhất, bấm là pet làm luôn.
+///  • Nhiệm vụ hằng ngày có thưởng Coin + Rương cuối ngày.
+///  • Trang trí phòng bằng nội thất (mua bằng Coin, kéo thả sắp xếp).
+///  • Thời tiết (nắng/mây/mưa) và ngày–đêm sinh động theo giờ game.
+///  • Cơ chế gọn hơn: chạm món để cho ăn; tắm bằng cách xoa lên pet.
 class HouseInteriorScreen extends StatefulWidget {
   final bool teacherMode;
 
@@ -60,48 +54,58 @@ class HouseInteriorScreen extends StatefulWidget {
 class _HouseInteriorScreenState extends State<HouseInteriorScreen>
     with TickerProviderStateMixin {
   final _firestoreService = FirestoreService();
-  final _pageController = PageController();
+  final _extrasService = HouseExtrasService();
   final _random = Random();
+  final ValueNotifier<HouseExtras> _extras =
+      ValueNotifier<HouseExtras>(const HouseExtras());
+  final ValueNotifier<double> _sleepProgress = ValueNotifier<double>(0);
 
-  int _roomIndex = 0; // phòng học sinh đang xem
-  int _petRoomIndex = 0; // phòng pet hiện đang ở (có thể khác phòng đang xem)
+  late final AnimationController _bob; // thở/bập bênh nhẹ
+  late final AnimationController _loop; // nhịp hành động lặp
+  late final AnimationController _jump; // nhảy khi chạm
+  late final AnimationController _squash; // nảy bịch khi thả tay
+  late final AnimationController _sky; // mây, mưa, sao
+
+  // ---------- Trạng thái nhà ----------
+  int _roomIndex = 0;
   bool _busy = false;
-
-  // ---------- Bàn ăn (Phòng ăn) ----------
-  bool _showFoodTable = false;
-  int _foodPageStart =
-      0; // vị trí bắt đầu trang hiện tại trong danh sách đồ ăn đang sở hữu
-  bool _showCrumbs = false; // hiệu ứng vụn đồ ăn khi đang nhai
-  bool _showPoof = false; // hiệu ứng "biến mất" khi món ăn được đưa cho pet
-
-  // ---------- Nhà tắm (Nhà tắm) — chà xà phòng rồi xịt nước, 2 bước ----------
-  bool _showBathScene = false;
-  int _soapScrubCount = 0;
-  bool _bathRinsing = false;
-  static const int _bathRequiredScrubs = 3;
-
-  PetActivity _activity = PetActivity.idle;
-  Offset _petPos = const Offset(0.5, 0.62); // tỉ lệ 0..1 trong không gian phòng
+  HousePetActivity _activity = HousePetActivity.idle;
+  Offset _petPos = const Offset(0.5, 0.62); // tỉ lệ 0..1 trong sân khấu phòng
   bool _facingRight = true;
-  Offset _walkFrom = Offset.zero;
-  Offset _walkTo = Offset.zero;
+  Duration _walkDuration = Duration.zero;
+  Size _stage = Size.zero;
+  String? _thought;
+  String? _uid;
 
+  // Bảng/lớp phủ đang mở.
+  bool _showFoodTray = false;
+  bool _showBath = false;
+  double _bathProgress = 0;
+  bool _bathRinsing = false;
+  bool _decorMode = false;
+  bool _sleeping = false;
+
+  // Bộ đếm/Timer.
   Timer? _idleTimer;
-  Timer? _clockTimer;
-  Timer? _petRefreshTimer;
+  Timer? _walkTimer;
   Timer? _thoughtTimer;
+  Timer? _clockTimer;
+  Timer? _refreshTimer;
+  int _token = 0; // hủy các việc rảnh rỗi đang dở khi có hành động mới
+  int _sleepToken = 0;
+  int _tapCount = 0;
+  int _patBuffer = 0;
+  final Set<int> _visitedRooms = {0};
+  bool _roomsQuestSent = false;
   bool _refreshingPet = false;
 
-  // Đồng hồ mô phỏng: 1 ngày game (00:00–23:59) = 15 phút ngoài đời.
-  // Tách riêng hai đơn vị: 15 phút là thời lượng ngoài đời, còn một ngày
-  // hiển thị của game luôn là 24 giờ để đồng hồ không bị lặp ở 00:14.
+  // ---------- Đồng hồ game: 1 ngày game (24 giờ) = 15 phút thật ----------
   static const Duration _gameDurationPerDay = Duration(hours: 24);
-  static const int _gameSpeed = 96; // 24 giờ game / 15 phút thực
+  static const int _gameSpeed = 96;
   static final DateTime _gameEpoch = DateTime(2026, 1, 1);
-  // Offset được lưu theo micro-giây của GAME, không phải micro-giây thực.
   Duration _gameTimeOffset = Duration.zero;
   DateTime _gameNow = DateTime.now();
-  String? _petThought;
+  HouseWeather _weather = HouseWeatherInfo.now();
 
   DateTime _gameClockFromReal(DateTime realNow) {
     final realElapsedMicros = realNow.difference(_gameEpoch).inMicroseconds;
@@ -119,93 +123,52 @@ class _HouseInteriorScreenState extends State<HouseInteriorScreen>
     final currentPosition = _gameClockFromReal(DateTime.now())
         .difference(_gameEpoch)
         .inMicroseconds;
-    var forwardGameMicros = morningMicros - currentPosition;
-    if (forwardGameMicros <= 0) forwardGameMicros += dayMicros;
-    _gameTimeOffset += Duration(microseconds: forwardGameMicros);
+    var forward = morningMicros - currentPosition;
+    if (forward <= 0) forward += dayMicros;
+    _gameTimeOffset += Duration(microseconds: forward);
     _gameNow = _gameClockFromReal(DateTime.now());
   }
 
   bool get _isNight => _gameNow.hour >= 19 || _gameNow.hour < 5;
-
+  double get _hourFraction => _gameNow.hour + _gameNow.minute / 60.0;
   String get _gameTimeLabel =>
       '${_gameNow.hour.toString().padLeft(2, '0')}:${_gameNow.minute.toString().padLeft(2, '0')}';
+  RoomInfo get _room => kRooms[_roomIndex];
 
-  /// Callback chạy khi 1 lượt đi bộ (do bấm nút hành động phòng) tới đích —
-  /// dùng để "đi tới phòng rồi mới ăn/tắm/ngủ" thay vì phải đứng sẵn đó.
-  VoidCallback? _pendingArrival;
-
-  /// Tăng dần mỗi khi có 1 hành động MỚI giành quyền điều khiển pet — các
-  /// vòng lặp bất đồng bộ (quay/nhảy/xoay khi rảnh) tự kiểm tra token này
-  /// sau mỗi await để biết mình đã bị "cắt ngang" hay chưa, tránh việc
-  /// chúng ghi đè _activity của 1 hành động mới hơn.
-  int _actionToken = 0;
-
-  late final AnimationController
-      _idleBobController; // bập bênh nhẹ khi đứng yên
-  late final AnimationController
-      _squashController; // rơi bịch kiểu slime khi thả tay
-  late final AnimationController _jumpController; // nhảy lắc chân khi chạm vào
-  late final AnimationController
-      _walkController; // đi dạo (di chuyển + bước chân)
-  late final AnimationController _sleepController; // thở phập phồng khi ngủ
-  late final AnimationController _eatController; // nhai nhóp nhép khi ăn
-  late final AnimationController _hopController; // nhảy nhẹ tại chỗ (idle)
-  late final AnimationController _spinController; // xoay vòng tại chỗ (idle)
-  late final AnimationController _bigJumpController; // nhảy 1 đoạn cao (idle)
-  late final AnimationController _bathController; // bọt xà phòng khi tắm
+  // ---------- Vòng đời ----------
 
   @override
   void initState() {
     super.initState();
-    _idleBobController =
-        AnimationController(vsync: this, duration: const Duration(seconds: 2))
-          ..repeat(reverse: true);
-    _squashController = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 550));
-    _jumpController = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 550));
-    _walkController = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 1600))
-      ..addStatusListener((status) {
-        if (status == AnimationStatus.completed) {
-          setState(() {
-            _petPos = _walkTo;
-            _activity = PetActivity.idle;
-          });
-          final pending = _pendingArrival;
-          _pendingArrival = null;
-          if (pending != null) {
-            pending();
-          } else {
-            _restartIdleTimer();
-          }
-        }
-      });
-    _sleepController = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 1500));
-    _eatController = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 320));
-    _hopController = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 380));
-    _spinController = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 600));
-    _bigJumpController = AnimationController(
+    _bob = AnimationController(vsync: this, duration: const Duration(seconds: 2))
+      ..repeat(reverse: true);
+    _loop = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 700));
-    _bathController = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 1100));
+    _jump = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 550));
+    _squash = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 550));
+    _sky = AnimationController(vsync: this, duration: const Duration(seconds: 14))
+      ..repeat();
 
     _gameNow = _gameClockFromReal(DateTime.now());
+    _extras.addListener(_onExtrasChanged);
     _restartIdleTimer();
-    _clockTimer = Timer.periodic(const Duration(milliseconds: 250), (_) {
+
+    _clockTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
       if (!mounted) return;
-      final nextGameNow = _gameClockFromReal(DateTime.now());
-      if (nextGameNow.minute != _gameNow.minute ||
-          nextGameNow.hour != _gameNow.hour ||
-          nextGameNow.second != _gameNow.second) {
-        setState(() => _gameNow = nextGameNow);
+      final next = _gameClockFromReal(DateTime.now());
+      final w = HouseWeatherInfo.now();
+      if (next.minute != _gameNow.minute ||
+          next.hour != _gameNow.hour ||
+          w != _weather) {
+        setState(() {
+          _gameNow = next;
+          _weather = w;
+        });
       }
     });
-    _petRefreshTimer = Timer.periodic(const Duration(seconds: 15), (_) async {
+    _refreshTimer = Timer.periodic(const Duration(seconds: 15), (_) async {
       if (!mounted || _refreshingPet) return;
       _refreshingPet = true;
       try {
@@ -214,195 +177,223 @@ class _HouseInteriorScreenState extends State<HouseInteriorScreen>
         _refreshingPet = false;
       }
     });
-    // Khi mở thẳng căn nhà từ cổng giáo viên, PetHomeScreen không còn là
-    // bước trung gian để gọi watchPet; vì vậy căn nhà tự kết nối hồ sơ pet.
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      // Mở thẳng từ cổng giáo viên thì tự kết nối hồ sơ pet.
       final petId = context.read<AuthProvider>().currentStudent?.petId;
       if (petId != null) context.read<PetProvider>().watchPet(petId);
+      _loadExtras();
     });
-    // LƯU Ý: trước đây có 1 Timer.periodic 18s tự trừ Sạch sẽ ngay tại
-    // đây (_dirtTick) — chỉ hoạt động khi màn hình này đang mở. Đã thay
-    // bằng cơ chế trừ hao theo thời gian THỰC dùng chung cho mọi màn hình
-    // (xem [FirestoreService.applyTimeDecay]), nên không cần Timer riêng
-    // ở đây nữa — pet vẫn dơ dần dù học sinh không vào Nhà pet.
   }
 
   @override
   void dispose() {
+    _flushPats();
     _idleTimer?.cancel();
-    _clockTimer?.cancel();
-    _petRefreshTimer?.cancel();
+    _walkTimer?.cancel();
     _thoughtTimer?.cancel();
-    _idleBobController.dispose();
-    _squashController.dispose();
-    _jumpController.dispose();
-    _walkController.dispose();
-    _sleepController.dispose();
-    _eatController.dispose();
-    _hopController.dispose();
-    _spinController.dispose();
-    _bigJumpController.dispose();
-    _bathController.dispose();
-    _pageController.dispose();
+    _clockTimer?.cancel();
+    _refreshTimer?.cancel();
+    _extras.removeListener(_onExtrasChanged);
+    _extras.dispose();
+    _sleepProgress.dispose();
+    _bob.dispose();
+    _loop.dispose();
+    _jump.dispose();
+    _squash.dispose();
+    _sky.dispose();
     super.dispose();
   }
 
-  // ---------- Đi dạo lung tung khi rảnh ----------
+  void _onExtrasChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _loadExtras() async {
+    final uid = context.read<AuthProvider>().currentStudent?.uid;
+    if (uid == null) return;
+    _uid = uid;
+    try {
+      final ex = await _extrasService.load(uid);
+      if (mounted) _extras.value = ex;
+    } catch (_) {
+      // Không tải được nội thất/nhiệm vụ thì nhà vẫn chơi bình thường.
+    }
+  }
+
+  /// Chỉ làm mới phần nhiệm vụ (giữ nguyên nội thất đang chỉnh ở máy này).
+  Future<void> _refreshQuests() async {
+    final uid = _uid;
+    if (uid == null || !mounted) return;
+    try {
+      final fresh = await _extrasService.load(uid);
+      if (!mounted) return;
+      _extras.value = _extras.value.copyWith(
+        questDate: fresh.questDate,
+        questProgress: fresh.questProgress,
+        questClaimed: fresh.questClaimed,
+        bonusClaimed: fresh.bonusClaimed,
+      );
+    } catch (_) {}
+  }
+
+  void _bump(String questId, {int by = 1}) {
+    final uid = _uid;
+    if (uid == null) return;
+    _extrasService
+        .bumpQuest(uid, questId, by: by)
+        .then((_) => _refreshQuests())
+        .catchError((Object _) {});
+  }
+
+  void _flushPats() {
+    final uid = _uid;
+    if (uid == null || _patBuffer <= 0) return;
+    final n = _patBuffer;
+    _patBuffer = 0;
+    _extrasService
+        .bumpQuest(uid, HouseQuestCatalog.pat, by: n)
+        .catchError((Object _) {});
+  }
+
+  // ---------- Tiện ích chung ----------
+
+  void _setActivity(HousePetActivity a) {
+    if (!mounted) return;
+    setState(() => _activity = a);
+    const looping = {
+      HousePetActivity.walking,
+      HousePetActivity.hopping,
+      HousePetActivity.spinning,
+      HousePetActivity.eating,
+      HousePetActivity.playing,
+    };
+    if (looping.contains(a)) {
+      if (!_loop.isAnimating) _loop.repeat();
+    } else {
+      _loop.stop();
+      _loop.value = 0;
+    }
+  }
+
+  void _setThought(String text,
+      {Duration visibleFor = const Duration(seconds: 4)}) {
+    if (!mounted) return;
+    _thoughtTimer?.cancel();
+    setState(() => _thought = text);
+    _thoughtTimer = Timer(visibleFor, () {
+      if (mounted) setState(() => _thought = null);
+    });
+  }
+
+  void _showMessage(String text) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(SnackBar(
+      content: Text(text),
+      behavior: SnackBarBehavior.floating,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 190),
+      duration: const Duration(seconds: 3),
+    ));
+  }
+
+  bool get _overlayOpen => _showFoodTray || _showBath || _sleeping;
+
+  // ---------- Pet đi dạo / chơi một mình ----------
 
   void _restartIdleTimer() {
     _idleTimer?.cancel();
     _idleTimer = Timer(const Duration(seconds: 7), _tryWander);
   }
 
-  /// Gọi mỗi khi học sinh chạm/kéo/chăm pet — hoãn đồng hồ đi dạo lại.
-  void _registerInteraction() => _restartIdleTimer();
+  Offset _randomSpot() => Offset(
+        0.14 + _random.nextDouble() * 0.72,
+        0.38 + _random.nextDouble() * 0.46,
+      );
 
-  /// Sau 15s không tương tác: chọn ngẫu nhiên 1 trong 4 kiểu "tự chơi 1 mình".
   void _tryWander() {
     if (!mounted) return;
-    if (_activity != PetActivity.idle) {
+    if (_activity != HousePetActivity.idle ||
+        _busy ||
+        _decorMode ||
+        _overlayOpen) {
       _restartIdleTimer();
       return;
     }
-    switch (_random.nextInt(5)) {
-      case 0:
-        _startWalkAround();
-        break;
-      case 1:
-        _startTurning();
-        break;
-      case 2:
-        _startHopping();
-        break;
-      case 3:
-        _startSpinning();
-        break;
-      default:
-        _startBigJump();
-    }
-  }
-
-  Offset _randomSpot() => Offset(
-        0.15 + _random.nextDouble() * 0.7,
-        0.45 + _random.nextDouble() * 0.32,
-      );
-
-  // TH1: đi dạo — đôi khi đổi phòng, đôi khi đi tới 1 điểm ngẫu nhiên.
-  void _startWalkAround() {
-    final changeRoom = kRooms.length > 1 && _random.nextDouble() < 0.35;
-    if (changeRoom) {
-      int newRoom;
-      do {
-        newRoom = _random.nextInt(kRooms.length);
-      } while (newRoom == _petRoomIndex);
-      setState(() {
-        _petRoomIndex = newRoom;
-        _petPos = _randomSpot();
-      });
+    final pet = context.read<PetProvider>().pet;
+    final roll = _random.nextInt(10);
+    if (roll < 3 && pet != null) {
+      _setThought(_ambientThought(pet));
       _restartIdleTimer();
+    } else if (roll < 7) {
+      _walkTo(_randomSpot());
+    } else if (roll < 8) {
+      _timedIdleAction(HousePetActivity.hopping,
+          Duration(milliseconds: 700 * (1 + _random.nextInt(3))));
+    } else if (roll < 9) {
+      _timedIdleAction(
+          HousePetActivity.spinning, Duration(seconds: 1 + _random.nextInt(2)));
     } else {
-      _walkToRandomSpot();
+      _turnAround();
     }
   }
 
-  /// Bắt đầu 1 lượt đi bộ tới [target] (tỉ lệ 0..1 trong phòng hiện tại của
-  /// pet). Nếu [onArrive] được cung cấp, nó sẽ chạy ngay khi đi tới nơi
-  /// (dùng cho trường hợp "đi tới phòng rồi mới ăn/tắm/ngủ").
-  void _beginWalkTo(Offset target, {VoidCallback? onArrive}) {
-    ++_actionToken; // hủy mọi hành động rảnh rỗi (quay/nhảy/xoay) đang dở
-    _walkFrom = _petPos;
-    _walkTo = target;
-    _facingRight = target.dx >= _petPos.dx;
-    _pendingArrival = onArrive;
-    setState(() => _activity = PetActivity.walking);
-    _walkController.forward(from: 0);
-  }
-
-  void _walkToRandomSpot() {
+  /// Đi bộ tới [target]; chạy [onArrive] khi tới nơi (dùng cho "đi tới
+  /// phòng rồi mới ăn/tắm/ngủ").
+  void _walkTo(Offset target, {VoidCallback? onArrive}) {
     if (!mounted) return;
-    _beginWalkTo(_randomSpot());
+    ++_token;
+    _walkTimer?.cancel();
+    final dx = (target.dx - _petPos.dx) * _stage.width;
+    final dy = (target.dy - _petPos.dy) * _stage.height;
+    final dist = sqrt(dx * dx + dy * dy);
+    final ms = (500 + dist * 3.2).clamp(500.0, 3200.0).round();
+    setState(() {
+      _facingRight = target.dx >= _petPos.dx;
+      _walkDuration = Duration(milliseconds: ms);
+      _petPos = target;
+    });
+    _setActivity(HousePetActivity.walking);
+    _walkTimer = Timer(Duration(milliseconds: ms), () {
+      if (!mounted) return;
+      setState(() => _walkDuration = Duration.zero);
+      _setActivity(HousePetActivity.idle);
+      if (onArrive != null) {
+        onArrive();
+      } else {
+        _restartIdleTimer();
+      }
+    });
   }
 
-  // TH2: quay mặt qua lại tại chỗ, lặp ngẫu nhiên 1-5 lần.
-  Future<void> _startTurning() async {
-    final token = ++_actionToken;
-    final times = 1 + _random.nextInt(5); // 1..5
-    setState(() => _activity = PetActivity.turning);
+  Future<void> _timedIdleAction(HousePetActivity a, Duration d) async {
+    final t = ++_token;
+    _setActivity(a);
+    await Future.delayed(d);
+    if (!mounted || t != _token) return;
+    _setActivity(HousePetActivity.idle);
+    _restartIdleTimer();
+  }
+
+  Future<void> _turnAround() async {
+    final t = ++_token;
+    final times = 1 + _random.nextInt(3);
     for (var i = 0; i < times; i++) {
-      if (!mounted || token != _actionToken) return;
+      if (!mounted || t != _token) return;
       setState(() => _facingRight = !_facingRight);
       await Future.delayed(const Duration(milliseconds: 450));
     }
-    if (!mounted || token != _actionToken) return;
-    setState(() => _activity = PetActivity.idle);
+    if (!mounted || t != _token) return;
     _restartIdleTimer();
   }
 
-  // TH3: nhảy lên 1 đoạn nhỏ tại chỗ, lặp ngẫu nhiên 1-5 lần.
-  Future<void> _startHopping() async {
-    final token = ++_actionToken;
-    final times = 1 + _random.nextInt(5); // 1..5
-    setState(() => _activity = PetActivity.hopping);
-    for (var i = 0; i < times; i++) {
-      if (!mounted || token != _actionToken) return;
-      await _hopController.forward(from: 0);
-      if (!mounted || token != _actionToken) return;
-      await Future.delayed(const Duration(milliseconds: 80));
-    }
-    if (!mounted || token != _actionToken) return;
-    setState(() => _activity = PetActivity.idle);
-    _restartIdleTimer();
-  }
-
-  // TH4: xoay vòng tại chỗ kiểu mèo đuổi đuôi, trong ngẫu nhiên 1-5 giây.
-  Future<void> _startSpinning() async {
-    final token = ++_actionToken;
-    final seconds = 1 + _random.nextInt(5); // 1..5
-    setState(() => _activity = PetActivity.spinning);
-    _spinController.repeat();
-    await Future.delayed(Duration(seconds: seconds));
-    _spinController.stop();
-    _spinController.value = 0;
-    if (!mounted || token != _actionToken) return;
-    setState(() => _activity = PetActivity.idle);
-    _restartIdleTimer();
-  }
-
-  // TH5: nhảy 1 đoạn cao tại chỗ (1 lần, cao hơn hẳn nhảy nhẹ).
-  Future<void> _startBigJump() async {
-    final token = ++_actionToken;
-    setState(() => _activity = PetActivity.bigJump);
-    await _bigJumpController.forward(from: 0);
-    if (!mounted || token != _actionToken) return;
-    setState(() => _activity = PetActivity.idle);
-    _restartIdleTimer();
-  }
-
-  // ---------- Tương tác chạm / kéo thả ----------
-
-  static const _busyActivities = {
-    PetActivity.sleeping,
-    PetActivity.eating,
-    PetActivity.walking,
-    PetActivity.turning,
-    PetActivity.hopping,
-    PetActivity.spinning,
-    PetActivity.bigJump,
-    PetActivity.bathing,
-    PetActivity.playing,
-    PetActivity.toileting,
-  };
+  // ---------- Chạm / kéo thả pet ----------
 
   void _onPetTap() {
-    if (_busy ||
-        _activity == PetActivity.sleeping ||
-        _activity == PetActivity.eating ||
-        _activity == PetActivity.bathing ||
-        _activity == PetActivity.playing ||
-        _activity == PetActivity.toileting) return;
-    _registerInteraction();
-    // Mỗi lần chạm pet phản ứng khác nhau (như Talking Tom): xoay vòng các câu.
+    if (_busy || _activity != HousePetActivity.idle || _decorMode) return;
+    _restartIdleTimer();
     const lines = [
       'Aww! Mình thích được vuốt ve quá! 💕',
       'Hihi, nhột quá đi! 😆',
@@ -413,59 +404,342 @@ class _HouseInteriorScreenState extends State<HouseInteriorScreen>
       'Gãi tiếp đi, gãi tiếp đi~ 😌',
     ];
     _tapCount++;
-    _setPetThought(lines[_tapCount % lines.length]);
-    _jumpController.forward(from: 0);
+    _setThought(lines[_tapCount % lines.length]);
+    _jump.forward(from: 0);
+    _patBuffer++;
+    if (_patBuffer >= 5) _flushPats();
   }
 
-  int _tapCount = 0;
+  void _onDragStart() {
+    if (_activity != HousePetActivity.idle || _busy || _decorMode) return;
+    _idleTimer?.cancel();
+    _walkDuration = Duration.zero;
+    _setActivity(HousePetActivity.dragging);
+  }
 
-  /// Đi sang phòng tương ứng (nếu đang ở phòng khác) rồi mới làm hành động.
-  Future<void> _goRoomThenAct(RoomType type) async {
-    if (_busy) return;
+  void _onDragUpdate(Offset delta) {
+    if (_activity != HousePetActivity.dragging || _stage.isEmpty) return;
+    setState(() {
+      _petPos = Offset(
+        (_petPos.dx + delta.dx / _stage.width).clamp(0.08, 0.92).toDouble(),
+        (_petPos.dy + delta.dy / _stage.height).clamp(0.2, 0.95).toDouble(),
+      );
+    });
+  }
+
+  void _onDragEnd() {
+    if (_activity != HousePetActivity.dragging) return;
+    _setActivity(HousePetActivity.idle);
+    _squash.forward(from: 0);
+    _restartIdleTimer();
+  }
+
+  // ---------- Đổi phòng & đi tới phòng rồi mới làm ----------
+
+  void _selectRoom(int i) {
+    if (i == _roomIndex || _sleeping || _showBath) return;
+    _walkTimer?.cancel();
+    ++_token;
+    setState(() {
+      _roomIndex = i;
+      _petPos = _randomSpot();
+      _walkDuration = Duration.zero;
+      _showFoodTray = false;
+    });
+    if (_activity == HousePetActivity.walking ||
+        _activity == HousePetActivity.hopping ||
+        _activity == HousePetActivity.spinning) {
+      _setActivity(HousePetActivity.idle);
+    }
+    _visitedRooms.add(i);
+    if (!_roomsQuestSent && _visitedRooms.length >= kRooms.length) {
+      _roomsQuestSent = true;
+      _bump(HouseQuestCatalog.rooms, by: kRooms.length);
+    }
+    _restartIdleTimer();
+  }
+
+  /// Sang phòng [type] (nếu đang ở phòng khác), đi bộ tới 1 điểm rồi làm
+  /// [action].
+  void _goRoomThenAct(RoomType type, VoidCallback action, {Offset? spot}) {
+    if (_busy || _sleeping) return;
+    if (_decorMode) {
+      _showMessage('Bấm "Xong" để thoát chế độ trang trí trước nhé!');
+      return;
+    }
+    if (_activity == HousePetActivity.dragging) return;
     final idx = kRooms.indexWhere((r) => r.type == type);
     if (idx < 0) return;
-    if (idx != _roomIndex) {
-      await _pageController.animateToPage(idx,
-          duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
-      if (!mounted) return;
-      setState(() => _roomIndex = idx);
-    }
-    _handleRoomAction(type);
+    _idleTimer?.cancel();
+    if (idx != _roomIndex) _selectRoom(idx);
+    _walkTo(spot ?? _randomSpot(), onArrive: action);
   }
 
-  /// Hoạt động vui chơi/học cùng pet (xem [PetActivityCatalog]).
-  Future<void> _doPetActivity(PetActivityDef a) async {
+  // ---------- Ăn ----------
+
+  void _onFeedPressed() => _goRoomThenAct(
+        RoomType.dining,
+        () {
+          if (mounted) setState(() => _showFoodTray = true);
+        },
+        spot: const Offset(0.5, 0.36),
+      );
+
+  Future<void> _feed(FoodTemplate food) async {
+    final auth = context.read<AuthProvider>();
+    final pet = context.read<PetProvider>().pet;
+    final student = auth.currentStudent;
+    if (pet == null || student == null || _busy) return;
+    if ((student.foodInventory[food.id] ?? 0) < 1) {
+      _showMessage('Bạn đã hết "${food.name}" rồi, hãy mua thêm ở Cửa hàng!');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _showFoodTray = false;
+    });
+    _idleTimer?.cancel();
+    _setActivity(HousePetActivity.eating);
+    _setThought('Ngon quá đi! 😋', visibleFor: const Duration(seconds: 3));
+    await Future.delayed(const Duration(milliseconds: 2200));
+    if (!mounted) return;
+    try {
+      final ok = await _firestoreService.feedPetWithFood(
+        studentId: student.uid,
+        petId: pet.id,
+        foodId: food.id,
+        hungerRestore: food.hungerRestore,
+        expReward: food.expReward,
+      );
+      if (ok) {
+        await auth.refreshCurrentStudent();
+        await _firestoreService.addPetAffection(
+            pet.id, FirestoreService.feedAffectionGain);
+        _bump(HouseQuestCatalog.feed);
+        _showMessage('Pet đã ăn "${food.name}" ngon lành! +${food.expReward} EXP 🍽️');
+      } else {
+        _showMessage('Bạn đã hết "${food.name}" rồi!');
+      }
+    } catch (e) {
+      _showMessage('Có lỗi xảy ra: $e');
+    } finally {
+      _endBusy();
+    }
+  }
+
+  void _endBusy() {
+    if (!mounted) return;
+    setState(() => _busy = false);
+    _setActivity(HousePetActivity.idle);
+    _restartIdleTimer();
+  }
+
+  // ---------- Tắm: xoa lên pet cho nổi bọt, rồi xả nước ----------
+
+  void _onBathePressed() => _goRoomThenAct(RoomType.bathroom, () {
+        if (!mounted) return;
+        setState(() {
+          _showBath = true;
+          _bathProgress = 0;
+          _bathRinsing = false;
+        });
+      });
+
+  void _onScrub(double distance) {
+    if (_bathRinsing || _bathProgress >= 1) return;
+    setState(() => _bathProgress =
+        (_bathProgress + distance / 700).clamp(0.0, 1.0).toDouble());
+    if (_bathProgress >= 1) _rinse();
+  }
+
+  Future<void> _rinse() async {
+    final pet = context.read<PetProvider>().pet;
+    if (pet == null || _bathRinsing) return;
+    setState(() => _bathRinsing = true);
+    _loop.repeat();
+    await Future.delayed(const Duration(milliseconds: 1400));
+    _loop.stop();
+    _loop.value = 0;
+    if (!mounted) return;
+    try {
+      await _firestoreService.bathePet(pet.id);
+      await _firestoreService.addPetAffection(
+          pet.id, FirestoreService.batheAffectionGain);
+      _bump(HouseQuestCatalog.bathe);
+      _jump.forward(from: 0);
+      _setThought('Thơm tho sạch sẽ rồi! 🫧');
+      _showMessage('Pet sạch sẽ thơm tho rồi! 🛁 +${FirestoreService.batheAffectionGain} Thân thiết');
+    } catch (e) {
+      _showMessage('Có lỗi xảy ra: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _showBath = false;
+          _bathRinsing = false;
+          _bathProgress = 0;
+        });
+      }
+      _restartIdleTimer();
+    }
+  }
+
+  void _closeBath() {
+    if (_bathRinsing) return;
+    setState(() {
+      _showBath = false;
+      _bathProgress = 0;
+    });
+    _restartIdleTimer();
+  }
+
+  // ---------- Ngủ ----------
+
+  void _onSleepPressed() => _goRoomThenAct(RoomType.bedroom, _sleep);
+
+  Future<void> _sleep() async {
     final pet = context.read<PetProvider>().pet;
     if (pet == null || _busy) return;
-    if (pet.energy < a.minEnergy) {
-      _setPetThought('Mình hơi mệt rồi, cho mình nghỉ một chút nhé…');
+    if (!_isNight) {
+      _setThought('Ban ngày mình chưa buồn ngủ. Tối mình sẽ ngủ nhé! ☀️');
+      _showMessage('Pet chỉ có thể ngủ vào buổi tối của giờ game (19:00–05:00).');
+      _restartIdleTimer();
       return;
     }
-    if (pet.hunger < a.minHunger) {
-      _setPetThought('Bụng mình đói rồi, cho mình ăn trước nhé… 🍽️');
+    if (pet.energy >= 100) {
+      _showMessage('Pet đã đầy Năng lượng, không cần ngủ nữa!');
+      _restartIdleTimer();
       return;
     }
+    final token = ++_sleepToken;
     _idleTimer?.cancel();
     _thoughtTimer?.cancel();
     setState(() {
       _busy = true;
-      _activity = PetActivity.playing;
-      _petThought = a.startThought;
+      _sleeping = true;
+      _thought = null;
     });
-    if (a.anim == 'spin') {
-      _hopController.repeat(reverse: true);
-      _spinController.repeat();
-    } else if (a.anim == 'hop') {
-      _hopController.repeat(reverse: true);
+    _sleepProgress.value = 0;
+    _setActivity(HousePetActivity.sleeping);
+    const steps = 150; // 150 x 100ms = 15 giây
+    for (var i = 1; i <= steps; i++) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      if (!mounted || token != _sleepToken) return; // bị hủy ("Dậy thôi")
+      _sleepProgress.value = i / steps;
     }
+    try {
+      await _firestoreService.sleepPet(pet.id);
+      await _firestoreService.addPetAffection(
+          pet.id, FirestoreService.sleepAffectionGain);
+      if (mounted) {
+        await context.read<AuthProvider>().refreshCurrentStudent();
+      }
+      if (mounted) {
+        setState(() => _wakeGameAtMorning());
+        _setThought('Chào buổi sáng! Mình đã ngủ đủ rồi! ☀️');
+      }
+      _showMessage('Pet đã thức dậy lúc 05:00, Năng lượng đã hồi 100! +10 EXP ☀️');
+    } catch (e) {
+      _showMessage('Có lỗi xảy ra: $e');
+    } finally {
+      if (mounted && token == _sleepToken) {
+        setState(() => _sleeping = false);
+        _endBusy();
+      }
+    }
+  }
+
+  /// "Dậy thôi": hủy giấc ngủ giữa chừng (không được hồi Năng lượng).
+  void _wakeEarly() {
+    if (!_sleeping) return;
+    _sleepToken++;
+    _sleepProgress.value = 0;
+    setState(() => _sleeping = false);
+    _setThought('Mình chưa ngủ đủ giấc… 🥱');
+    _endBusy();
+  }
+
+  // ---------- Vệ sinh / Chơi / Hoạt động ----------
+
+  Future<void> _useToilet() async {
+    final pet = context.read<PetProvider>().pet;
+    if (pet == null || _busy || _sleeping) return;
+    if (_decorMode) {
+      _showMessage('Bấm "Xong" để thoát chế độ trang trí trước nhé!');
+      return;
+    }
+    if (pet.toiletNeed < 20) {
+      _setThought('Mình chưa cần đi vệ sinh đâu! 😊');
+      return;
+    }
+    _idleTimer?.cancel();
+    setState(() => _busy = true);
+    _setActivity(HousePetActivity.toileting);
+    _setThought('Mình đi vệ sinh một chút nhé… 🚽',
+        visibleFor: const Duration(seconds: 3));
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted) return;
+    try {
+      await _firestoreService.useToilet(pet.id);
+      _setThought('Thoải mái hơn nhiều rồi! 🌟');
+    } catch (e) {
+      _showMessage('Có lỗi xảy ra: $e');
+    } finally {
+      _endBusy();
+    }
+  }
+
+  Future<void> _playWithPet() async {
+    final pet = context.read<PetProvider>().pet;
+    if (pet == null || _busy || _sleeping) return;
+    if (_decorMode) {
+      _showMessage('Bấm "Xong" để thoát chế độ trang trí trước nhé!');
+      return;
+    }
+    if (pet.energy <= 15) {
+      _setThought('Mình hơi mệt rồi, cho mình nghỉ một chút nhé…');
+      return;
+    }
+    _idleTimer?.cancel();
+    setState(() => _busy = true);
+    _setActivity(HousePetActivity.playing);
+    _setThought('Chơi với mình nhé! 🎾', visibleFor: const Duration(seconds: 3));
+    await Future.delayed(const Duration(seconds: 3));
+    if (!mounted) return;
+    try {
+      await _firestoreService.playWithPet(pet.id);
+      await _firestoreService.addPetAffection(
+          pet.id, FirestoreService.playAffectionGain);
+      _bump(HouseQuestCatalog.play);
+      _setThought('Vui quá! Cảm ơn bạn đã chơi cùng mình! ✨');
+    } catch (e) {
+      _showMessage('Có lỗi xảy ra: $e');
+    } finally {
+      _endBusy();
+    }
+  }
+
+  Future<void> _doPetActivity(PetActivityDef a) async {
+    final pet = context.read<PetProvider>().pet;
+    if (pet == null || _busy || _sleeping) return;
+    if (pet.energy < a.minEnergy) {
+      _setThought('Mình hơi mệt rồi, cho mình nghỉ một chút nhé…');
+      return;
+    }
+    if (pet.hunger < a.minHunger) {
+      _setThought('Bụng mình đói rồi, cho mình ăn trước nhé… 🍽️');
+      return;
+    }
+    _idleTimer?.cancel();
+    setState(() => _busy = true);
+    _setActivity(a.anim == 'spin'
+        ? HousePetActivity.spinning
+        : HousePetActivity.playing);
+    _setThought(a.startThought, visibleFor: Duration(seconds: a.seconds));
     for (var i = 0; i < a.seconds; i++) {
-      if (a.anim == 'pose') _jumpController.forward(from: 0);
+      if (a.anim == 'pose') _jump.forward(from: 0);
       await Future.delayed(const Duration(seconds: 1));
       if (!mounted) return;
     }
-    _hopController.stop();
-    _spinController.stop();
-    _spinController.value = 0;
     try {
       await _firestoreService.petActivity(pet.id,
           hunger: a.hunger,
@@ -475,31 +749,240 @@ class _HouseInteriorScreenState extends State<HouseInteriorScreen>
           exp: a.exp);
       await _firestoreService.addPetAffection(
           pet.id, FirestoreService.playAffectionGain);
-      _setPetThought(a.doneThought);
+      _bump(HouseQuestCatalog.play);
+      _setThought(a.doneThought);
     } catch (e) {
-      _setPetThought('Mình chưa làm được lúc này, thử lại nhé.');
       _showMessage('Có lỗi xảy ra: $e');
     } finally {
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          _activity = PetActivity.idle;
-        });
-      }
-      _registerInteraction();
+      _endBusy();
     }
   }
 
   void _openActivitiesSheet() {
     final pet = context.read<PetProvider>().pet;
-    if (pet == null) return;
+    if (pet == null || _busy || _sleeping) return;
+    if (_decorMode) {
+      _showMessage('Bấm "Xong" để thoát chế độ trang trí trước nhé!');
+      return;
+    }
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      // PetActivitiesSheet tự đóng khi chọn, nên không pop thêm ở đây.
       builder: (_) => PetActivitiesSheet(pet: pet, onPick: _doPetActivity),
+    );
+  }
+
+  // ---------- Chăm sóc nhanh ----------
+
+  String _ambientThought(PetModel pet) {
+    if (pet.toiletNeed >= 70) return 'Mình muốn đi vệ sinh… 🚽';
+    if (pet.hunger <= 35) return 'Bụng mình réo rồi… 🍽️';
+    if (pet.hygiene <= 35) return 'Mình cần được tắm… 🫧';
+    if (pet.energy <= 30) {
+      return _isNight
+          ? 'Mình buồn ngủ quá… 🌙'
+          : 'Mình hơi mệt, muốn chơi nhẹ thôi…';
+    }
+    if (pet.playfulness <= 35) return 'Chơi với mình một chút nhé! 🎾';
+    if (_weather == HouseWeather.rain) {
+      return 'Trời mưa rồi, ở trong nhà thật ấm áp ☔';
+    }
+    if (_isNight) return 'Tối nay thật yên tĩnh… ✨';
+    if (_weather == HouseWeather.sunny) return 'Hôm nay nắng đẹp quá! ☀️';
+    return 'Mình đang nhìn ngắm căn nhà! 🏠';
+  }
+
+  /// Việc nên làm NGAY: nhu cầu cấp bách nhất, nếu không có thì nhắc nhận
+  /// thưởng nhiệm vụ. null = không cần gợi ý.
+  _QuickCare? _quickCare(PetModel pet) {
+    final options = <_QuickCare>[];
+    if (pet.toiletNeed >= 70) {
+      options.add(_QuickCare(pet.toiletNeed.toDouble(), '🚽',
+          'Pet buồn vệ sinh', 'Đi ngay', true, _useToilet));
+    }
+    if (pet.hunger <= 35) {
+      options.add(_QuickCare((100 - pet.hunger).toDouble(), '🍗',
+          'Pet đang đói', 'Cho ăn', true, _onFeedPressed));
+    }
+    if (pet.hygiene <= 35) {
+      options.add(_QuickCare((100 - pet.hygiene).toDouble(), '🫧',
+          'Pet đang dơ', 'Tắm ngay', true, _onBathePressed));
+    }
+    if (pet.energy <= 30 && _isNight) {
+      options.add(_QuickCare((100 - pet.energy).toDouble(), '🌙',
+          'Pet buồn ngủ', 'Đi ngủ', true, _onSleepPressed));
+    }
+    if (pet.playfulness <= 35) {
+      options.add(_QuickCare((100 - pet.playfulness).toDouble(), '🎾',
+          'Pet muốn chơi', 'Chơi ngay', true, _playWithPet));
+    }
+    if (options.isNotEmpty) {
+      options.sort((a, b) => b.score.compareTo(a.score));
+      return options.first;
+    }
+    if (_extras.value.badgeCount > 0) {
+      return _QuickCare(0, '🎁', 'Có thưởng nhiệm vụ đang chờ', 'Nhận',
+          false, _openQuests);
+    }
+    return null;
+  }
+
+  // ---------- Nhiệm vụ ----------
+
+  void _openQuests() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => HouseQuestSheet(
+        extras: _extras,
+        onClaim: _claimQuest,
+        onClaimBonus: _claimBonus,
+      ),
+    );
+  }
+
+  Future<void> _claimQuest(String id) async {
+    final uid = _uid;
+    if (uid == null) return;
+    try {
+      final coin = await _extrasService.claimQuest(uid, id);
+      if (coin > 0) {
+        if (mounted) await context.read<AuthProvider>().refreshCurrentStudent();
+        await _refreshQuests();
+        _showMessage('Nhận thưởng nhiệm vụ: +$coin 🪙');
+      }
+    } catch (e) {
+      _showMessage('Chưa nhận được thưởng: $e');
+    }
+  }
+
+  Future<void> _claimBonus() async {
+    final uid = _uid;
+    if (uid == null) return;
+    try {
+      final coin = await _extrasService.claimBonus(uid);
+      if (coin > 0) {
+        if (mounted) await context.read<AuthProvider>().refreshCurrentStudent();
+        await _refreshQuests();
+        _jump.forward(from: 0);
+        _showMessage('Mở Rương thưởng cuối ngày: +$coin 🪙 🎉');
+      }
+    } catch (e) {
+      _showMessage('Chưa mở được rương: $e');
+    }
+  }
+
+  // ---------- Trang trí nội thất ----------
+
+  void _toggleDecor() {
+    if (_busy || _sleeping || _overlayOpen) return;
+    _idleTimer?.cancel();
+    setState(() => _decorMode = !_decorMode);
+    if (!_decorMode) _restartIdleTimer();
+  }
+
+  void _setPlaced(RoomType type, List<PlacedDecor> list) {
+    final map = Map<String, List<PlacedDecor>>.from(_extras.value.placed);
+    map[type.name] = list;
+    _extras.value = _extras.value.copyWith(placed: map);
+  }
+
+  void _saveRoomDecor(RoomType type) {
+    final uid = _uid;
+    if (uid == null) return;
+    _extrasService
+        .savePlaced(uid, type, _extras.value.placedIn(type))
+        .catchError((Object _) {
+      _showMessage('Chưa lưu được cách sắp xếp nội thất, thử lại nhé.');
+    });
+  }
+
+  void _placeDecor(DecorTemplate d) {
+    final type = _room.type;
+    final current = _extras.value.placedIn(type);
+    if (current.length >= DecorCatalog.maxPerRoom) {
+      _showMessage('Phòng đã đầy, hãy cất bớt đồ nhé!');
+      return;
+    }
+    if (_extras.value.placedIds.contains(d.id)) return;
+    final p = PlacedDecor(
+      id: d.id,
+      x: 0.3 + _random.nextDouble() * 0.4,
+      y: 0.5 + _random.nextDouble() * 0.3,
+    );
+    _setPlaced(type, [...current, p]);
+    _saveRoomDecor(type);
+  }
+
+  void _removeDecor(String id) {
+    final type = _room.type;
+    _setPlaced(type,
+        _extras.value.placedIn(type).where((e) => e.id != id).toList());
+    _saveRoomDecor(type);
+  }
+
+  void _moveDecor(String id, Offset delta) {
+    if (_stage.isEmpty) return;
+    final type = _room.type;
+    _setPlaced(type, [
+      for (final p in _extras.value.placedIn(type))
+        if (p.id == id)
+          p.moved(
+            (p.x + delta.dx / _stage.width).clamp(0.05, 0.95).toDouble(),
+            (p.y + delta.dy / _stage.height).clamp(0.12, 0.95).toDouble(),
+          )
+        else
+          p,
+    ]);
+  }
+
+  Future<void> _buyDecor(DecorTemplate d) async {
+    final auth = context.read<AuthProvider>();
+    final student = auth.currentStudent;
+    if (student == null) return;
+    if (!student.hasEnoughCoin(d.priceCoin)) {
+      _showMessage('Bạn chưa đủ Coin để mua "${d.name}" rồi 🪙');
+      return;
+    }
+    try {
+      final ok = await _extrasService.buyDecor(student.uid, d,
+          coinInfinite: student.coinInfinite);
+      if (!mounted) return;
+      if (ok) {
+        _extras.value = _extras.value
+            .copyWith(ownedDecor: {..._extras.value.ownedDecor, d.id});
+        await auth.refreshCurrentStudent();
+        _showMessage('Đã mua "${d.name}"! Vào tab Kho để đặt vào phòng 🎉');
+      } else {
+        _showMessage('Không mua được "${d.name}" (đã có hoặc không đủ Coin).');
+      }
+    } catch (e) {
+      _showMessage('Có lỗi xảy ra: $e');
+    }
+  }
+
+  // ---------- Menu & tiện ích ----------
+
+  void _openWardrobe() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const SkinRoomSheet(),
+    );
+  }
+
+  void _openAffection() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => const FriendshipSheet(),
     );
   }
 
@@ -556,13 +1039,6 @@ class _HouseInteriorScreenState extends State<HouseInteriorScreen>
                         label: tr('Bảng xếp hạng'),
                         onTap: () => go(const LeaderboardScreen())),
                     MenuTile(
-                        icon: const EmojiIcon('👕', size: 38),
-                        label: tr('Phòng đổi skin'),
-                        onTap: () {
-                          Navigator.of(sheetContext).pop();
-                          _openWardrobe();
-                        }),
-                    MenuTile(
                         icon: const EmojiIcon('🏠', size: 38),
                         label: tr('Đổi nhà'),
                         onTap: () => go(const ShopScreen(
@@ -585,7 +1061,7 @@ class _HouseInteriorScreenState extends State<HouseInteriorScreen>
                           label: tr('Thân thiết'),
                           onTap: () {
                             Navigator.of(sheetContext).pop();
-                            _showAffectionSheet(pet);
+                            _openAffection();
                           }),
                   ],
                 ),
@@ -597,390 +1073,7 @@ class _HouseInteriorScreenState extends State<HouseInteriorScreen>
     );
   }
 
-  void _setPetThought(String text,
-      {Duration visibleFor = const Duration(seconds: 4)}) {
-    if (!mounted) return;
-    _thoughtTimer?.cancel();
-    setState(() => _petThought = text);
-    _thoughtTimer = Timer(visibleFor, () {
-      if (mounted) setState(() => _petThought = null);
-    });
-  }
-
-  Future<void> _playWithPet() async {
-    final pet = context.read<PetProvider>().pet;
-    if (pet == null || _busy) return;
-    if (pet.energy <= 15) {
-      _setPetThought('Mình hơi mệt rồi, cho mình nghỉ một chút nhé…');
-      return;
-    }
-    _idleTimer?.cancel();
-    setState(() {
-      _busy = true;
-      _activity = PetActivity.playing;
-      _petThought = 'Chơi với mình nhé! 🎾';
-    });
-    _thoughtTimer?.cancel();
-    _hopController.repeat(reverse: true);
-    _spinController.repeat();
-    await Future.delayed(const Duration(seconds: 3));
-    _hopController.stop();
-    _spinController.stop();
-    _spinController.value = 0;
-    if (!mounted) return;
-    try {
-      await _firestoreService.playWithPet(pet.id);
-      await _firestoreService.addPetAffection(
-          pet.id, FirestoreService.playAffectionGain);
-      _setPetThought('Vui quá! Cảm ơn bạn đã chơi cùng mình! ✨');
-    } catch (e) {
-      _setPetThought('Mình chưa chơi được lúc này, thử lại nhé.');
-      _showMessage('Có lỗi xảy ra: $e');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          _activity = PetActivity.idle;
-        });
-      }
-      _registerInteraction();
-    }
-  }
-
-  Future<void> _useToilet() async {
-    final pet = context.read<PetProvider>().pet;
-    if (pet == null || _busy) return;
-    if (pet.toiletNeed < 20) {
-      _setPetThought('Mình chưa cần đi vệ sinh đâu! 😊');
-      return;
-    }
-    _idleTimer?.cancel();
-    setState(() {
-      _busy = true;
-      _activity = PetActivity.toileting;
-      _petThought = 'Mình đi vệ sinh một chút nhé… 🚽';
-    });
-    _thoughtTimer?.cancel();
-    await Future.delayed(const Duration(seconds: 2));
-    if (!mounted) return;
-    try {
-      await _firestoreService.useToilet(pet.id);
-      _setPetThought('Thoải mái hơn nhiều rồi! 🌟');
-    } catch (e) {
-      _setPetThought('Có lỗi khi thực hiện, thử lại nhé.');
-      _showMessage('Có lỗi xảy ra: $e');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          _activity = PetActivity.idle;
-        });
-      }
-      _registerInteraction();
-    }
-  }
-
-  void _onPetDragStart() {
-    if (_busyActivities.contains(_activity)) {
-      return;
-    }
-    setState(() => _activity = PetActivity.dragging);
-  }
-
-  void _onPetDragUpdate(Offset delta, double worldW, double worldH) {
-    if (_activity != PetActivity.dragging) return;
-    // QUAN TRỌNG: tính trên _petPos của State (luôn mới nhất), không phải
-    // giá trị petPos được truyền qua props xuống widget con — vì khi kéo
-    // nhanh, nhiều sự kiện onPanUpdate có thể tới trước khi widget kịp
-    // build lại, khiến props bị "cũ" và làm pet theo chuột chậm/lag.
-    setState(() {
-      final dx = ((_petPos.dx * worldW) + delta.dx).clamp(40.0, worldW - 40.0) /
-          worldW;
-      final dy = ((_petPos.dy * worldH) + delta.dy).clamp(80.0, worldH - 40.0) /
-          worldH;
-      _petPos = Offset(dx, dy);
-    });
-  }
-
-  void _onPetDragEnd() {
-    if (_activity != PetActivity.dragging) return;
-    setState(() => _activity = PetActivity.idle);
-    _squashController.forward(from: 0); // rơi bịch kiểu slime
-    _registerInteraction();
-  }
-
-  // ---------- 3 hành động chăm sóc theo phòng ----------
-
-  void _showMessage(String text) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
-  }
-
-  String _ambientThought(PetModel pet) {
-    if (pet.toiletNeed >= 70) return 'Mình muốn đi vệ sinh… 🚽';
-    if (pet.hunger <= 35) return 'Bụng mình réo rồi… 🍽️';
-    if (pet.hygiene <= 35) return 'Mình cần được tắm… 🫧';
-    if (pet.energy <= 30) {
-      return _isNight
-          ? 'Mình buồn ngủ quá… 🌙'
-          : 'Mình hơi mệt, muốn chơi nhẹ thôi…';
-    }
-    if (pet.playfulness <= 35) return 'Chơi với mình một chút nhé! 🎾';
-    return _isNight
-        ? 'Tối nay thật yên tĩnh… ✨'
-        : 'Mình đang nhìn ngắm căn nhà! ☀️';
-  }
-
-  /// Mở bàn ăn (chiếm 1/4 màn hình phía dưới, làm mờ nền phía sau) — thay
-  /// cho việc tự động ăn ngay như trước đây. Học sinh cần kéo món ăn đã
-  /// mua từ bàn lên khu vực pet để cho ăn (xem [_feedWithFood]).
-  void _openFoodTable() {
-    setState(() {
-      _showFoodTable = true;
-      _foodPageStart = 0;
-    });
-  }
-
-  void _closeFoodTable() {
-    setState(() => _showFoodTable = false);
-  }
-
-  /// Cho pet ăn 1 món cụ thể đã kéo thả tới khu vực pet — mỗi món hồi No
-  /// bụng & cộng EXP khác nhau theo đúng giá trị đã mua ở Cửa hàng.
-  Future<void> _feedWithFood(FoodTemplate food) async {
-    final auth = context.read<AuthProvider>();
-    final pet = context.read<PetProvider>().pet;
-    final student = auth.currentStudent;
-    if (pet == null || student == null || _busy) return;
-
-    final owned = student.foodInventory[food.id] ?? 0;
-    if (owned < 1) {
-      _showMessage('Bạn đã hết "${food.name}" rồi, hãy mua thêm ở Cửa hàng!');
-      return;
-    }
-
-    setState(() {
-      _busy = true;
-      _activity = PetActivity.eating;
-      _showCrumbs = true;
-    });
-    _idleTimer?.cancel();
-    _eatController.repeat(reverse: true);
-    await Future.delayed(const Duration(milliseconds: 2200));
-    _eatController.stop();
-    _eatController.value = 0;
-    if (!mounted) return;
-
-    try {
-      final success = await _firestoreService.feedPetWithFood(
-        studentId: student.uid,
-        petId: pet.id,
-        foodId: food.id,
-        hungerRestore: food.hungerRestore,
-        expReward: food.expReward,
-      );
-      if (success) {
-        // Gọi refreshCurrentStudent() thay vì tự cập nhật foodInventory
-        // cục bộ — vừa lấy đúng số liệu mới nhất từ Firestore (kể cả
-        // petLevel nếu vừa lên cấp), vừa tự kiểm tra thành tựu mới luôn
-        // (xem AuthProvider.refreshCurrentStudent).
-        await auth.refreshCurrentStudent();
-        await _firestoreService.addPetAffection(
-            pet.id, FirestoreService.feedAffectionGain);
-        _showMessage(
-            'Pet đã ăn "${food.name}" ngon lành! +${food.expReward} EXP 🍽️');
-      } else {
-        _showMessage('Bạn đã hết "${food.name}" rồi!');
-      }
-    } catch (e) {
-      _showMessage('Có lỗi xảy ra: $e');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          _activity = PetActivity.idle;
-          _showCrumbs = false;
-        });
-      }
-      _registerInteraction();
-    }
-  }
-
-  /// Mở "cảnh tắm" (che mờ nền, pet phóng to nổi bật) — thay cho việc tắm
-  /// xong ngay chỉ bằng 1 nút bấm như trước. Học sinh cần kéo xà phòng
-  /// chà lên pet đủ [_bathRequiredScrubs] lần cho nổi bọt, rồi kéo vòi
-  /// nước xịt để rửa sạch — giống hệt cách tắm cho thú cưng trong Talking
-  /// Tom (xem [_onSoapScrub], [_onHoseRinse]).
-  void _openBathScene() {
-    setState(() {
-      _showBathScene = true;
-      _soapScrubCount = 0;
-      _bathRinsing = false;
-    });
-  }
-
-  void _closeBathScene() {
-    setState(() => _showBathScene = false);
-  }
-
-  /// Kéo xà phòng thả lên pet — mỗi lần cộng 1 nấc bọt, tới khi đủ
-  /// [_bathRequiredScrubs] thì vòi nước mới dùng được.
-  void _onSoapScrub() {
-    if (_soapScrubCount >= _bathRequiredScrubs || _bathRinsing) return;
-    setState(() => _soapScrubCount++);
-    _bathController.forward(from: 0); // bọt "phù" lên 1 nhịp mỗi lần chà
-  }
-
-  /// Kéo vòi nước thả lên pet khi đã đủ bọt — xịt rửa sạch rồi mới thật
-  /// sự ghi nhận lượt tắm (cộng chỉ số + điểm Thân thiết).
-  Future<void> _onHoseRinse() async {
-    if (_soapScrubCount < _bathRequiredScrubs || _bathRinsing) return;
-    final pet = context.read<PetProvider>().pet;
-    if (pet == null) return;
-
-    setState(() => _bathRinsing = true);
-    _bathController.repeat();
-    await Future.delayed(const Duration(milliseconds: 1300));
-    _bathController.stop();
-    _bathController.value = 0;
-    if (!mounted) return;
-
-    try {
-      await _firestoreService.bathePet(pet.id);
-      await _firestoreService.addPetAffection(
-          pet.id, FirestoreService.batheAffectionGain);
-      _jumpController.forward(from: 0);
-      _showMessage('Pet sạch sẽ thơm tho rồi! 🛁 +${FirestoreService.batheAffectionGain} Thân thiết');
-    } catch (e) {
-      _showMessage('Có lỗi xảy ra: $e');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _showBathScene = false;
-          _bathRinsing = false;
-          _soapScrubCount = 0;
-        });
-      }
-      _registerInteraction();
-    }
-  }
-
-  Future<void> _sleep() async {
-    final pet = context.read<PetProvider>().pet;
-    if (pet == null || _busy) return;
-
-    if (!_isNight) {
-      _setPetThought('Ban ngày mình chưa buồn ngủ. Tối mình sẽ ngủ nhé! ☀️');
-      _showMessage(
-          'Pet chỉ có thể ngủ vào buổi tối của giờ game (19:00–05:00).');
-      return;
-    }
-
-    if (pet.energy >= 100) {
-      _showMessage('Pet đã đầy Năng lượng, không cần ngủ nữa!');
-      return;
-    }
-
-    setState(() {
-      _busy = true;
-      _activity = PetActivity.sleeping;
-      _petThought = 'Zzz… Đến giờ ngủ rồi… 🌙';
-    });
-    _thoughtTimer?.cancel();
-    _idleTimer?.cancel();
-    _sleepController.repeat(reverse: true);
-    await Future.delayed(const Duration(seconds: 15));
-    _sleepController.stop();
-    _sleepController.value = 0;
-    if (!mounted) return;
-
-    try {
-      await _firestoreService.sleepPet(pet.id);
-      await _firestoreService.addPetAffection(
-          pet.id, FirestoreService.sleepAffectionGain);
-      if (mounted) {
-        // Ngủ có thể cộng EXP đủ để pet lên cấp → refresh để cập nhật
-        // petLevel mới nhất và tự kiểm tra thành tựu liên quan.
-        await context.read<AuthProvider>().refreshCurrentStudent();
-      }
-      if (mounted) {
-        setState(() {
-          _wakeGameAtMorning();
-          _petThought = 'Chào buổi sáng! Mình đã ngủ đủ rồi! ☀️';
-        });
-      }
-      _showMessage(
-          'Pet đã thức dậy lúc 05:00, Năng lượng đã hồi 100! +10 EXP ☀️');
-    } catch (e) {
-      _showMessage('Có lỗi xảy ra: $e');
-    } finally {
-      if (mounted)
-        setState(() {
-          _busy = false;
-          _activity = PetActivity.idle;
-        });
-      _registerInteraction();
-    }
-  }
-
-  /// Bấm nút hành động của 1 phòng: cho pet DI CHUYỂN tới đúng phòng đang
-  /// xem (nếu đang ở phòng khác thì coi như "đi qua" phòng đó — dùng lại
-  /// đúng cơ chế dịch chuyển phòng + đi tới 1 điểm bất kỳ đã có sẵn cho
-  /// việc đi dạo tự do), rồi mới thực hiện hành động (ăn/tắm/ngủ).
-  void _handleRoomAction(RoomType type) {
-    if (_busy) return;
-    if (_activity == PetActivity.sleeping || _activity == PetActivity.eating) {
-      return;
-    }
-    _idleTimer?.cancel();
-
-    void runAction() {
-      switch (type) {
-        case RoomType.bedroom:
-          _sleep();
-          break;
-        case RoomType.bathroom:
-          _openBathScene();
-          break;
-        case RoomType.dining:
-          _openFoodTable();
-          break;
-      }
-    }
-
-    final targetRoomIndex = _roomIndex; // phòng đang xem trên màn hình
-    final alreadyThere =
-        _petRoomIndex == targetRoomIndex && _activity == PetActivity.idle;
-    if (alreadyThere) {
-      runAction();
-      return;
-    }
-
-    if (_petRoomIndex != targetRoomIndex) {
-      // "Đi qua" phòng khác: mỗi phòng là 1 world riêng nên việc chuyển
-      // _petRoomIndex chính là bước pet sang phòng đó.
-      setState(() => _petRoomIndex = targetRoomIndex);
-    }
-    _beginWalkTo(_randomSpot(), onArrive: runAction);
-  }
-
-  void _openWardrobe() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => const SkinRoomSheet(),
-    );
-  }
-
-  void _showAffectionSheet(PetModel pet) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => const FriendshipSheet(),
-    );
-  }
+  // ---------- Dựng giao diện ----------
 
   @override
   Widget build(BuildContext context) {
@@ -990,1833 +1083,468 @@ class _HouseInteriorScreenState extends State<HouseInteriorScreen>
     if (pet == null || student == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
+    _uid = student.uid;
     final house = HouseCatalog.byId(pet.currentHouseId);
+    final media = MediaQuery.of(context);
+    final topReserve = media.padding.top + 150;
+    final bottomReserve = media.padding.bottom + 152;
     final ownedFoods = FoodCatalog.all
         .where((f) => (student.foodInventory[f.id] ?? 0) > 0)
         .toList();
+    final coinText = student.coinInfinite ? '∞' : '${student.coin}';
+    final ex = _extras.value;
+    final quick = (_busy || _overlayOpen || _decorMode) ? null : _quickCare(pet);
+    final canPop = Navigator.of(context).canPop();
+    final weatherIcon = _isNight ? '🌙' : _weather.emoji;
 
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        foregroundColor: Colors.white,
-        title: Column(
-          mainAxisSize: MainAxisSize.min,
+    return PopScope(
+      canPop: !_decorMode,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _decorMode) setState(() => _decorMode = false);
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(
+          fit: StackFit.expand,
           children: [
-            Text(house.name, style: const TextStyle(color: Colors.white)),
-            Text(
-              '${_isNight ? '🌙 Buổi tối' : '☀️ Buổi sáng'} · $_gameTimeLabel',
-              style: const TextStyle(color: Colors.white70, fontSize: 11),
-            ),
-          ],
-        ),
-        // Các lối tắt khác (cửa hàng, skin, đổi nhà...) đã gom vào nút Menu ở
-        // bảng điều khiển phía dưới cho gọn.
-        actions: widget.teacherMode
-            ? const []
-            : [
-                IconButton(
-                  icon: const Icon(Icons.favorite_rounded,
-                      color: Color(0xFFFF6B8A)),
-                  tooltip: tr('Thân thiết'),
-                  onPressed: () => _showAffectionSheet(pet),
-                ),
-              ],
-      ),
-      body: Stack(
-        children: [
-          // Popup mở khoá khi đạt mốc Thân thiết mới (widget vô hình).
-          const FriendshipCelebrationListener(),
-          PageView.builder(
-            controller: _pageController,
-            itemCount: kRooms.length,
-            onPageChanged: (i) => setState(() => _roomIndex = i),
-            itemBuilder: (context, index) {
-              final room = kRooms[index];
-              return _RoomView(
-                key: ValueKey(room.type),
-                pet: pet,
-                room: room,
-                backgroundAsset: roomBackgroundAsset(house.id, room.type),
-                petThought: _petThought ?? _ambientThought(pet),
-                showPet: _petRoomIndex == index &&
-                    !_showFoodTable &&
-                    !_showBathScene,
-                activity: _activity,
-                petPos: _petPos,
-                walkFrom: _walkFrom,
-                walkTo: _walkTo,
-                facingRight: _facingRight,
-                idleBobController: _idleBobController,
-                walkController: _walkController,
-                squashController: _squashController,
-                jumpController: _jumpController,
-                sleepController: _sleepController,
-                eatController: _eatController,
-                hopController: _hopController,
-                spinController: _spinController,
-                bigJumpController: _bigJumpController,
-                bathController: _bathController,
-                onPetTap: _onPetTap,
-                onPetDragStart: _onPetDragStart,
-                onPetDragUpdate: _onPetDragUpdate,
-                onPetDragEnd: _onPetDragEnd,
-              );
-            },
-          ),
-          if (_isNight)
-            const Positioned.fill(
-              child: IgnorePointer(
-                child: ColoredBox(color: Color(0x220D1B52)),
-              ),
-            ),
-          if (widget.teacherMode) ...[
-            Positioned(
-              top: 58,
-              left: 0,
-              right: 0,
-              child: IgnorePointer(
-                child: Center(
-                  child: _TeacherCurrencyBar(student: student),
-                ),
-              ),
-            ),
-          ],
-          if (_showFoodTable) ...[
-            // Làm mờ toàn bộ khung cảnh phía sau khi ngồi vào bàn ăn.
+            const FriendshipCelebrationListener(),
+            // 1) Nền phòng.
             Positioned.fill(
-              child: IgnorePointer(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-                  child: Container(color: Colors.black.withValues(alpha: 0.25)),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                child: Image.asset(
+                  roomBackgroundAsset(house.id, _room.type),
+                  key: ValueKey('${house.id}-${_room.type.name}'),
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  height: double.infinity,
                 ),
               ),
             ),
-            // Khu vực thả đồ ăn cho pet — kéo món ăn từ bàn lên vùng này.
-            Positioned(
-              left: 0,
-              right: 0,
-              top: 0,
-              bottom: MediaQuery.of(context).size.height * 0.25,
-              child: DragTarget<FoodTemplate>(
-                onAcceptWithDetails: (details) {
-                  setState(() => _showPoof = true);
-                  Future.delayed(const Duration(milliseconds: 500), () {
-                    if (mounted) setState(() => _showPoof = false);
-                  });
-                  _feedWithFood(details.data);
-                },
-                builder: (context, candidateData, rejectedData) =>
-                    const SizedBox.expand(),
-              ),
-            ),
-            // Pet "trồi lên" từ dưới bàn, phóng to, đứng nổi bật ngay khu
-            // vực phía trên bàn ăn — mọi hiệu ứng khi ăn (vụn bánh, poof...)
-            // đều hiển thị ngay trên pet này thay vì neo cố định cuối màn.
-            Positioned(
-              left: 0,
-              right: 0,
-              top: 0,
-              bottom: MediaQuery.of(context).size.height * 0.25,
-              child: IgnorePointer(
-                child: Center(
-                  child: TweenAnimationBuilder<double>(
-                    key: const ValueKey('feed-spotlight-rise'),
-                    tween: Tween(begin: 0, end: 1),
-                    duration: const Duration(milliseconds: 450),
-                    curve: Curves.easeOutBack,
-                    builder: (context, t, child) => Opacity(
-                      opacity: t.clamp(0.0, 1.0),
-                      child: Transform.translate(
-                        offset: Offset(0, (1 - t) * 90),
-                        child: Transform.scale(
-                          scale: 0.55 + 0.45 * t,
-                          child: child,
-                        ),
-                      ),
-                    ),
-                    child: _FeedingSpotlightPet(
-                      pet: pet,
-                      isEating: _activity == PetActivity.eating,
-                      idleBobController: _idleBobController,
-                      eatController: _eatController,
-                      showCrumbs: _showCrumbs,
-                      showPoof: _showPoof,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            // Bàn ăn — chiếm 1/4 chiều cao màn hình, hiện tối đa 3 món/lượt.
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: MediaQuery.of(context).size.height * 0.25,
-              child: _FoodTablePanel(
-                ownedFoods: ownedFoods,
-                pageStart: _foodPageStart,
-                onPageLeft: ownedFoods.isEmpty || _foodPageStart <= 0
-                    ? null
-                    : () => setState(
-                        () => _foodPageStart = max(0, _foodPageStart - 3)),
-                onPageRight: ownedFoods.isEmpty ||
-                        _foodPageStart + 3 >= ownedFoods.length
-                    ? null
-                    : () => setState(() => _foodPageStart += 3),
-                onClose: _closeFoodTable,
-                onGoShopping: () {
-                  _closeFoodTable();
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          const ShopScreen(initialCategory: ItemCategory.food),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-          if (_showBathScene) ...[
-            // Làm mờ toàn bộ khung cảnh phía sau khi bước vào cảnh tắm.
+            // 2) Ngày/đêm + thời tiết.
             Positioned.fill(
-              child: IgnorePointer(
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-                  child: Container(color: Colors.black.withValues(alpha: 0.25)),
-                ),
+              child: HouseAmbience(
+                hour: _hourFraction,
+                weather: _weather,
+                tick: _sky,
               ),
             ),
-            // Khu vực thả xà phòng/vòi nước lên pet.
+            // 3) Sân khấu: nội thất + pet, sắp theo chiều sâu.
             Positioned(
               left: 0,
               right: 0,
-              top: 0,
-              bottom: MediaQuery.of(context).size.height * 0.22,
-              child: DragTarget<String>(
-                onAcceptWithDetails: (details) {
-                  if (details.data == 'soap') {
-                    _onSoapScrub();
-                  } else if (details.data == 'hose') {
-                    _onHoseRinse();
-                  }
-                },
-                builder: (context, candidateData, rejectedData) =>
-                    const SizedBox.expand(),
-              ),
+              top: topReserve,
+              bottom: bottomReserve,
+              child: LayoutBuilder(builder: (context, c) {
+                _stage = Size(c.maxWidth, c.maxHeight);
+                return _buildStage(pet, ex, c.maxWidth, c.maxHeight);
+              }),
             ),
-            // Pet phóng to nổi bật, hiện rõ số bọt xà phòng đã chà + hiệu
-            // ứng xịt nước khi rửa.
+            // 4) Thanh trên: quay lại, tên nhà, menu + thẻ trạng thái.
             Positioned(
+              top: 0,
               left: 0,
               right: 0,
-              top: 0,
-              bottom: MediaQuery.of(context).size.height * 0.22,
-              child: IgnorePointer(
+              child: SafeArea(
+                bottom: false,
                 child: Center(
-                  child: TweenAnimationBuilder<double>(
-                    key: const ValueKey('bath-spotlight-rise'),
-                    tween: Tween(begin: 0, end: 1),
-                    duration: const Duration(milliseconds: 450),
-                    curve: Curves.easeOutBack,
-                    builder: (context, t, child) => Opacity(
-                      opacity: t.clamp(0.0, 1.0),
-                      child: Transform.translate(
-                        offset: Offset(0, (1 - t) * 90),
-                        child: Transform.scale(
-                          scale: 0.55 + 0.45 * t,
-                          child: child,
-                        ),
-                      ),
-                    ),
-                    child: _BathSpotlightPet(
-                      pet: pet,
-                      idleBobController: _idleBobController,
-                      bathController: _bathController,
-                      soapCount: _soapScrubCount,
-                      requiredScrubs: _bathRequiredScrubs,
-                      isRinsing: _bathRinsing,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            // Khay dụng cụ — xà phòng và vòi nước, chiếm gần 1/4 màn hình.
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: MediaQuery.of(context).size.height * 0.22,
-              child: _BathToolsPanel(
-                soapCount: _soapScrubCount,
-                requiredScrubs: _bathRequiredScrubs,
-                soapReady: _soapScrubCount < _bathRequiredScrubs,
-                hoseReady:
-                    _soapScrubCount >= _bathRequiredScrubs && !_bathRinsing,
-                onClose: _closeBathScene,
-              ),
-            ),
-          ],
-        ],
-      ),
-      bottomNavigationBar: PetCareDock(
-        pet: pet,
-        roomIndex: _roomIndex,
-        busy: _busy,
-        onRoom: (i) => _pageController.animateToPage(i,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut),
-        onFeed: () => _goRoomThenAct(RoomType.dining),
-        onBathe: () => _goRoomThenAct(RoomType.bathroom),
-        onSleep: () => _goRoomThenAct(RoomType.bedroom),
-        onToilet: _useToilet,
-        onPlay: _playWithPet,
-        onActivities: _openActivitiesSheet,
-        onMenu: _openMenuSheet,
-      ),
-    );
-  }
-}
-
-/// Nội dung 1 phòng: nền được vẽ RỘNG HƠN khung nhìn (để kéo camera xem
-/// phần ngoài khung), pet sprite tương tác (chạm/kéo) nếu pet đang ở
-/// đúng phòng này.
-class _RoomView extends StatefulWidget {
-  final PetModel pet;
-  final RoomInfo room;
-  final String backgroundAsset;
-  final String? petThought;
-  final bool showPet;
-  final PetActivity activity;
-  final Offset petPos;
-  final Offset walkFrom;
-  final Offset walkTo;
-  final bool facingRight;
-  final AnimationController idleBobController;
-  final AnimationController squashController;
-  final AnimationController jumpController;
-  final AnimationController walkController;
-  final AnimationController sleepController;
-  final AnimationController eatController;
-  final AnimationController hopController;
-  final AnimationController spinController;
-  final AnimationController bigJumpController;
-  final AnimationController bathController;
-  final VoidCallback onPetTap;
-  final VoidCallback onPetDragStart;
-  final void Function(Offset delta, double worldW, double worldH)
-      onPetDragUpdate;
-  final VoidCallback onPetDragEnd;
-
-  const _RoomView({
-    super.key,
-    required this.pet,
-    required this.room,
-    required this.backgroundAsset,
-    required this.petThought,
-    required this.showPet,
-    required this.activity,
-    required this.petPos,
-    required this.walkFrom,
-    required this.walkTo,
-    required this.facingRight,
-    required this.idleBobController,
-    required this.squashController,
-    required this.jumpController,
-    required this.walkController,
-    required this.sleepController,
-    required this.eatController,
-    required this.hopController,
-    required this.spinController,
-    required this.bigJumpController,
-    required this.bathController,
-    required this.onPetTap,
-    required this.onPetDragStart,
-    required this.onPetDragUpdate,
-    required this.onPetDragEnd,
-  });
-
-  @override
-  State<_RoomView> createState() => _RoomViewState();
-}
-
-class _RoomViewState extends State<_RoomView> {
-  // Camera cho phép kéo ngang xem phần nền không vừa khung hình.
-  double _cameraX = 0;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final viewportW = constraints.maxWidth;
-        final viewportH = constraints.maxHeight;
-        // Màn ngang/rộng (desktop, toàn màn hình) đã thấy đủ khung cảnh nên
-        // không cần "world" rộng hơn để kéo xem thêm — dùng đúng bằng khung
-        // hình để nền không bị phóng to bất thường. Chỉ màn dọc (mobile) hẹp
-        // mới mở rộng thêm 55% để có thể kéo camera qua trái/phải.
-        final isWide = viewportW >= viewportH;
-        final bgW = isWide ? viewportW : viewportW * 1.55;
-        final maxCameraShift = bgW - viewportW;
-
-        return ClipRect(
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onPanUpdate: (details) {
-              setState(() {
-                _cameraX =
-                    (_cameraX - details.delta.dx).clamp(0.0, maxCameraShift);
-              });
-            },
-            child: Stack(
-              children: [
-                Positioned(
-                  left: -_cameraX,
-                  top: 0,
-                  width: bgW,
-                  height: viewportH,
-                  child: _RoomWorld(
-                    pet: widget.pet,
-                    room: widget.room,
-                    backgroundAsset: widget.backgroundAsset,
-                    petThought: widget.petThought,
-                    showPet: widget.showPet,
-                    activity: widget.activity,
-                    petPos: widget.petPos,
-                    walkFrom: widget.walkFrom,
-                    walkTo: widget.walkTo,
-                    facingRight: widget.facingRight,
-                    worldWidth: bgW,
-                    worldHeight: viewportH,
-                    idleBobController: widget.idleBobController,
-                    squashController: widget.squashController,
-                    jumpController: widget.jumpController,
-                    walkController: widget.walkController,
-                    sleepController: widget.sleepController,
-                    eatController: widget.eatController,
-                    hopController: widget.hopController,
-                    spinController: widget.spinController,
-                    bigJumpController: widget.bigJumpController,
-                    bathController: widget.bathController,
-                    onPetTap: widget.onPetTap,
-                    onPetDragStart: widget.onPetDragStart,
-                    onPetDragUpdate: widget.onPetDragUpdate,
-                    onPetDragEnd: widget.onPetDragEnd,
-                  ),
-                ),
-                // Gợi ý có thể kéo xem thêm, mờ dần rồi biến mất.
-                if (maxCameraShift > 4)
-                  Positioned(
-                    right: 10,
-                    top: viewportH * 0.45,
-                    child: IgnorePointer(
-                      child: TweenAnimationBuilder<double>(
-                        tween: Tween(begin: 1, end: 0),
-                        duration: const Duration(seconds: 4),
-                        builder: (context, value, child) =>
-                            Opacity(opacity: value, child: child),
-                        child: const Icon(Icons.swipe_rounded,
-                            color: Colors.white70, size: 28),
-                      ),
-                    ),
-                  ),
-                // Thanh chỉ số: LUÔN cố định theo khung hình thật (không
-                // nằm trong lớp world nên không bị kéo lệch theo camera),
-                // và giới hạn chiều rộng tối đa để không bị giãn to trên
-                // màn hình rộng.
-                Positioned(
-                  top: 100,
-                  left: 0,
-                  right: 0,
-                  child: IgnorePointer(
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 460),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: Row(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 520),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
                             children: [
+                              if (canPop)
+                                HouseGlassButton(
+                                  icon: Icons.arrow_back_rounded,
+                                  tooltip: tr('Quay lại'),
+                                  onTap: () => Navigator.of(context).maybePop(),
+                                )
+                              else
+                                const SizedBox(width: 44),
                               Expanded(
-                                  child: _MiniStat(
-                                      icon: Icons.restaurant_rounded,
-                                      value: widget.pet.hunger,
-                                      color: AppColors.secondary)),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                  child: _MiniStat(
-                                      icon: Icons.bolt_rounded,
-                                      value: widget.pet.energy,
-                                      color: AppColors.info)),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                  child: _MiniStat(
-                                      icon: Icons.sentiment_satisfied_alt_rounded,
-                                      value: widget.pet.happiness,
-                                      color: AppColors.success)),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                  child: _MiniStat(
-                                      icon: Icons.clean_hands_rounded,
-                                      value: widget.pet.hygiene,
-                                      color: AppColors.gold)),
+                                child: Center(
+                                  child: HouseTitleChip(
+                                    title: house.name,
+                                    subtitle:
+                                        '$weatherIcon ${_isNight ? 'Đêm' : _weather.label} · $_gameTimeLabel',
+                                  ),
+                                ),
+                              ),
+                              HouseGlassButton(
+                                icon: Icons.apps_rounded,
+                                tooltip: 'Menu',
+                                onTap: _openMenuSheet,
+                              ),
                             ],
                           ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-/// Toàn bộ nội dung 1 "thế giới phòng" (rộng hơn khung nhìn): ảnh nền,
-/// lớp phủ tối, thanh chỉ số, và pet sprite với đầy đủ animation.
-class _RoomWorld extends StatelessWidget {
-  final PetModel pet;
-  final RoomInfo room;
-  final String backgroundAsset;
-  final String? petThought;
-  final bool showPet;
-  final PetActivity activity;
-  final Offset petPos;
-  final Offset walkFrom;
-  final Offset walkTo;
-  final bool facingRight;
-  final double worldWidth;
-  final double worldHeight;
-  final AnimationController idleBobController;
-  final AnimationController squashController;
-  final AnimationController jumpController;
-  final AnimationController walkController;
-  final AnimationController sleepController;
-  final AnimationController eatController;
-  final AnimationController hopController;
-  final AnimationController spinController;
-  final AnimationController bigJumpController;
-  final AnimationController bathController;
-  final VoidCallback onPetTap;
-  final VoidCallback onPetDragStart;
-  final void Function(Offset delta, double worldW, double worldH)
-      onPetDragUpdate;
-  final VoidCallback onPetDragEnd;
-
-  const _RoomWorld({
-    required this.pet,
-    required this.room,
-    required this.backgroundAsset,
-    required this.petThought,
-    required this.showPet,
-    required this.activity,
-    required this.petPos,
-    required this.walkFrom,
-    required this.walkTo,
-    required this.facingRight,
-    required this.worldWidth,
-    required this.worldHeight,
-    required this.idleBobController,
-    required this.squashController,
-    required this.jumpController,
-    required this.walkController,
-    required this.sleepController,
-    required this.eatController,
-    required this.hopController,
-    required this.spinController,
-    required this.bigJumpController,
-    required this.bathController,
-    required this.onPetTap,
-    required this.onPetDragStart,
-    required this.onPetDragUpdate,
-    required this.onPetDragEnd,
-  });
-
-  static const _petSize = 110.0;
-  bool get _isDirty => pet.hygiene < 40;
-
-  // Bọt xà phòng trắng bao TRỌN quanh người pet khi tắm (dx/dy tính từ tâm
-  // ô pet 110x110, dy đo từ mép trên).
-  static const _foamSpots = [
-    _FoamSpot(-32, 70, 48, 0.85),
-    _FoamSpot(-5, 85, 58, 0.9),
-    _FoamSpot(28, 68, 46, 0.85),
-    _FoamSpot(-40, 40, 34, 0.75),
-    _FoamSpot(38, 38, 32, 0.75),
-    _FoamSpot(0, 20, 40, 0.8),
-    _FoamSpot(-18, 95, 36, 0.8),
-    _FoamSpot(18, 98, 38, 0.8),
-    _FoamSpot(-45, 60, 28, 0.7),
-    _FoamSpot(45, 58, 26, 0.7),
-  ];
-
-  // Bong bóng nổi lên phía trên đầu khi tắm — nhiều & lệch pha để lúc nào
-  // cũng có vài bong bóng đang bay.
-  static const _bubbleSpots = [
-    _BubbleSpot(-16, 14, 16, 0.0),
-    _BubbleSpot(30, 4, 12, 0.33),
-    _BubbleSpot(6, 30, 20, 0.66),
-    _BubbleSpot(-34, -6, 14, 0.15),
-    _BubbleSpot(20, -14, 18, 0.5),
-    _BubbleSpot(44, 20, 10, 0.8),
-    _BubbleSpot(-46, 24, 12, 0.42),
-    _BubbleSpot(0, -20, 22, 0.9),
-  ];
-
-  // Vệt bẩn (nâu) rải trên người khi pet dơ (hygiene < 40).
-  static const _dirtSpots = [
-    _DirtSpot(-30, 40, 14, 0.38),
-    _DirtSpot(20, 60, 18, 0.34),
-    _DirtSpot(-10, 90, 12, 0.36),
-    _DirtSpot(35, 30, 10, 0.3),
-    _DirtSpot(-40, 70, 10, 0.32),
-    _DirtSpot(6, 15, 9, 0.3),
-  ];
-
-  // Ruồi bay vòng quanh vài điểm cố định trên người khi pet dơ.
-  static const _flySpots = [
-    _FlySpot(92, 8, 8, 0, 15),
-    _FlySpot(-8, 52, 10, 2.1, 13),
-    _FlySpot(60, 96, 7, 4.2, 12),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Image.asset(backgroundAsset, fit: BoxFit.cover),
-        const Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          height: 140,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Colors.black45, Colors.transparent],
-              ),
-            ),
-          ),
-        ),
-        if (showPet)
-          AnimatedBuilder(
-            animation: Listenable.merge([
-              idleBobController,
-              squashController,
-              jumpController,
-              walkController,
-              sleepController,
-              eatController,
-              hopController,
-              spinController,
-              bigJumpController,
-              bathController,
-            ]),
-            builder: (context, _) => _buildPet(petThought),
-          ),
-      ],
-    );
-  }
-
-  /// 1 bong bóng xà phòng nổi lên và mờ dần theo pha [t] (0..1, lặp lại).
-  /// [dx] lệch ngang so với tâm pet, [baseTop] là độ cao bắt đầu (âm = phía
-  /// trên đầu pet).
-  Widget _soapBubble(double t,
-      {required double dx, required double baseTop, required double size}) {
-    final rise = t * 42;
-    double opacity;
-    if (t < 0.15) {
-      opacity = t / 0.15;
-    } else if (t > 0.75) {
-      opacity = (1 - t) / 0.25;
-    } else {
-      opacity = 1.0;
-    }
-    return Positioned(
-      left: _petSize / 2 + dx,
-      top: baseTop - rise,
-      child: Opacity(
-        opacity: opacity.clamp(0.0, 1.0),
-        child: Text('🫧', style: TextStyle(fontSize: size)),
-      ),
-    );
-  }
-
-  Widget _buildPet(String? petThought) {
-    // 1) Vị trí hiện tại theo hoạt động.
-    Offset pos = petPos;
-    if (activity == PetActivity.walking) {
-      final t = Curves.easeInOut.transform(walkController.value);
-      pos = Offset.lerp(walkFrom, walkTo, t)!;
-    }
-    final left = pos.dx * worldWidth - _petSize / 2;
-    final top = pos.dy * worldHeight - _petSize / 2;
-
-    // 2) translate dọc (bập bênh / bước chân / nhảy).
-    double liftY = 0;
-    switch (activity) {
-      case PetActivity.idle:
-      case PetActivity.turning:
-      case PetActivity.spinning:
-        liftY = sin(idleBobController.value * pi) * 5;
-        break;
-      case PetActivity.walking:
-        liftY = sin(walkController.value * pi * 6).abs() * 8;
-        break;
-      case PetActivity.hopping:
-      case PetActivity.bigJump:
-      case PetActivity.bathing:
-      case PetActivity.dragging:
-      case PetActivity.sleeping:
-      case PetActivity.eating:
-      case PetActivity.toileting:
-        liftY = 0;
-        break;
-      case PetActivity.playing:
-        liftY = sin(hopController.value * pi) * 12;
-        break;
-    }
-    // Nhảy nhẹ tại chỗ (đứng yên, không đổi vị trí ngang) khi rảnh.
-    final hopT = activity == PetActivity.hopping ? hopController.value : 0.0;
-    final hopLift = sin(hopT * pi) * 16;
-    // Nhảy 1 đoạn cao tại chỗ khi rảnh (parabol lên rồi xuống, cao hơn hẳn).
-    final bigJumpT =
-        activity == PetActivity.bigJump ? bigJumpController.value : 0.0;
-    final bigJumpLift = sin(bigJumpT * pi) * 55;
-    // Cú nhảy khi chạm vào: parabol lên rồi xuống.
-    final jumpT = jumpController.value;
-    final jumpLift = sin(jumpT * pi) * 26;
-
-    // 3) Bóp méo kiểu slime (squash & stretch).
-    double scaleX = 1, scaleY = 1;
-    if (activity == PetActivity.dragging) {
-      scaleX = 0.92;
-      scaleY = 1.08;
-    }
-    // Rơi bịch xuống sau khi thả tay: dẹt ngang rồi nảy lại bình thường.
-    final squashT = squashController.value;
-    if (squashT > 0 && squashT < 1) {
-      final bounce = sin(squashT * pi); // 0 -> 1 -> 0
-      scaleX *= 1 + bounce * 0.45;
-      scaleY *= 1 - bounce * 0.35;
-    }
-    // Lắc chân khi nhảy (chạm vào pet).
-    if (jumpT > 0 && jumpT < 1) {
-      final wobble = sin(jumpT * pi);
-      scaleX *= 1 - wobble * 0.12;
-      scaleY *= 1 + wobble * 0.18;
-    }
-    // Lắc nhẹ khi nhảy tại chỗ lúc rảnh.
-    if (hopT > 0 && hopT < 1) {
-      final wobble = sin(hopT * pi);
-      scaleX *= 1 - wobble * 0.08;
-      scaleY *= 1 + wobble * 0.1;
-    }
-    // Vươn người rõ hơn khi nhảy 1 đoạn cao lúc rảnh.
-    if (bigJumpT > 0 && bigJumpT < 1) {
-      final wobble = sin(bigJumpT * pi);
-      scaleX *= 1 - wobble * 0.15;
-      scaleY *= 1 + wobble * 0.22;
-    }
-    // Thở phập phồng khi ngủ.
-    if (activity == PetActivity.sleeping) {
-      final breathe = sin(sleepController.value * pi);
-      scaleX = 1.16;
-      scaleY = 0.62 + breathe * 0.05;
-    }
-    // Nhai nhóp nhép khi ăn.
-    if (activity == PetActivity.eating) {
-      final chew = eatController.value;
-      scaleX = 1 + chew * 0.08;
-      scaleY = 1 - chew * 0.08;
-    }
-    // Rùng mình lắc nhẹ khi đang được kỳ cọ tắm rửa.
-    final bathT = activity == PetActivity.bathing ? bathController.value : 0.0;
-    if (bathT > 0) {
-      final scrub = sin(bathT * pi * 2 * 3); // lắc qua lại vài lần / vòng lặp
-      scaleX *= 1 + scrub * 0.05;
-      scaleY *= 1 - scrub * 0.03;
-    }
-
-    // Ảnh gốc trong assets/pets vẽ pet quay mặt sang TRÁI theo mặc định,
-    // nên khi facingRight = true (đang đi/quay sang phải) phải LẬT ảnh lại.
-    final flip = facingRight ? -1.0 : 1.0;
-
-    Widget sprite = Transform(
-      alignment: Alignment.center,
-      transform: Matrix4.identity()..scale(scaleX * flip, scaleY),
-      child: Image.asset(pet.idleAsset, fit: BoxFit.contain),
-    );
-
-    // Xoay vòng tại chỗ kiểu mèo đuổi đuôi.
-    if (activity == PetActivity.spinning) {
-      sprite = Transform.rotate(
-        angle: spinController.value * 2 * pi,
-        alignment: Alignment.center,
-        child: sprite,
-      );
-    }
-
-    // Lắc lư nhẹ như đang được kỳ cọ khi tắm.
-    if (activity == PetActivity.bathing) {
-      sprite = Transform.rotate(
-        angle: sin(bathT * pi * 2 * 3) * 0.08,
-        alignment: Alignment.center,
-        child: sprite,
-      );
-    }
-
-    if (activity == PetActivity.sleeping) {
-      sprite = Stack(
-        alignment: Alignment.topCenter,
-        clipBehavior: Clip.none,
-        children: [
-          sprite,
-          Positioned(
-            top: -22,
-            child: Opacity(
-              opacity: (0.4 + sleepController.value * 0.6).clamp(0.0, 1.0),
-              child: const Text('💤', style: TextStyle(fontSize: 22)),
-            ),
-          ),
-        ],
-      );
-    }
-
-    if (activity == PetActivity.playing) {
-      sprite = Stack(
-        alignment: Alignment.topCenter,
-        clipBehavior: Clip.none,
-        children: [
-          sprite,
-          const Positioned(
-            top: -20,
-            child: Text('🎾', style: TextStyle(fontSize: 21)),
-          ),
-        ],
-      );
-    }
-
-    if (activity == PetActivity.toileting) {
-      sprite = Stack(
-        alignment: Alignment.topCenter,
-        clipBehavior: Clip.none,
-        children: [
-          sprite,
-          const Positioned(
-            top: -20,
-            child: Text('🚽', style: TextStyle(fontSize: 20)),
-          ),
-        ],
-      );
-    }
-
-    if (activity == PetActivity.eating) {
-      sprite = Stack(
-        alignment: Alignment.topCenter,
-        clipBehavior: Clip.none,
-        children: [
-          sprite,
-          const Positioned(
-            top: -18,
-            child: Text('🍗', style: TextStyle(fontSize: 20)),
-          ),
-        ],
-      );
-    }
-
-    if (activity == PetActivity.playing) {
-      final pulse = 1 + sin(hopController.value * pi) * 0.05;
-      sprite = Transform.scale(scale: pulse, child: sprite);
-    }
-
-    if (activity == PetActivity.bathing) {
-      final pulse = 1 + sin(bathT * pi * 2 * 3) * 0.06;
-      sprite = Stack(
-        clipBehavior: Clip.none,
-        children: [
-          // Bọt xà phòng trắng bao TRỌN quanh người, phồng nhẹ theo nhịp kỳ cọ.
-          for (final f in _foamSpots)
-            Positioned(
-              left: _petSize / 2 + f.dx - (f.size * pulse) / 2,
-              top: f.dy - (f.size * pulse) / 2,
-              child: Container(
-                width: f.size * pulse,
-                height: f.size * pulse,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: f.opacity),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.white.withValues(alpha: f.opacity * 0.5),
-                      blurRadius: 8,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          sprite,
-          // Bong bóng nổi lên phía trên, dày đặc hơn hẳn.
-          for (final b in _bubbleSpots)
-            _soapBubble(
-              (bathT + b.phase) % 1.0,
-              dx: b.dx,
-              baseTop: b.baseTop,
-              size: b.size,
-            ),
-        ],
-      );
-    }
-
-    String? moodEmoji;
-    if (activity == PetActivity.playing) {
-      moodEmoji = '😍';
-    } else if (activity == PetActivity.toileting) {
-      moodEmoji = '😌';
-    } else if (activity != PetActivity.sleeping &&
-        activity != PetActivity.eating &&
-        activity != PetActivity.bathing) {
-      if (pet.toiletNeed >= 70) {
-        moodEmoji = '😣';
-      } else if (pet.hunger <= 35 || pet.energy <= 30) {
-        moodEmoji = '😟';
-      } else if (pet.hygiene <= 35) {
-        moodEmoji = '😵';
-      } else if (pet.playfulness <= 35) {
-        moodEmoji = '🥺';
-      } else if (pet.happiness >= 80) {
-        moodEmoji = '😊';
-      }
-    }
-    if (moodEmoji != null) {
-      sprite = Stack(
-        clipBehavior: Clip.none,
-        children: [
-          sprite,
-          Positioned(
-            top: -22,
-            left: _petSize / 2 - 13,
-            child: Text(moodEmoji, style: const TextStyle(fontSize: 22)),
-          ),
-        ],
-      );
-    }
-
-    if (_isDirty && activity != PetActivity.sleeping) {
-      // Mức độ dơ (0..1) — hygiene càng thấp thì đốm bẩn/lớp phủ càng đậm.
-      final dirtSeverity = ((40 - pet.hygiene) / 40).clamp(0.0, 1.0);
-      sprite = Stack(
-        clipBehavior: Clip.none,
-        children: [
-          // Phủ 1 lớp màu nâu xỉn lên lông để nhìn rõ là đang dơ, không chỉ
-          // dựa vào icon ruồi/bụi.
-          ColorFiltered(
-            colorFilter: ColorFilter.mode(
-              const Color(0xFF6B4A2A)
-                  .withValues(alpha: 0.25 + dirtSeverity * 0.25),
-              BlendMode.srcATop,
-            ),
-            child: sprite,
-          ),
-          // Các vệt bẩn rải trên người.
-          for (final d in _dirtSpots)
-            Positioned(
-              left: _petSize / 2 + d.dx - d.size / 2,
-              top: d.dy - d.size / 2,
-              child: Container(
-                width: d.size,
-                height: d.size,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFF5B3A1E).withValues(alpha: d.opacity),
-                ),
-              ),
-            ),
-          // Ruồi bay vòng quanh nhiều điểm khác nhau trên người.
-          for (final f in _flySpots)
-            Positioned(
-              left: f.baseLeft +
-                  cos(idleBobController.value * pi * 2 + f.phase) * f.radius,
-              top: f.baseTop +
-                  sin(idleBobController.value * pi * 2 + f.phase) * f.radius,
-              child: Text('🪰', style: TextStyle(fontSize: f.size)),
-            ),
-          // Bụi bốc lên ở 2 bên.
-          Positioned(
-            left: -8,
-            top: 26 - sin(idleBobController.value * pi * 2) * 5,
-            child: const Text('💨', style: TextStyle(fontSize: 13)),
-          ),
-          Positioned(
-            right: -12,
-            top: 64 + cos(idleBobController.value * pi * 2) * 5,
-            child: const Text('💨', style: TextStyle(fontSize: 11)),
-          ),
-        ],
-      );
-    }
-
-    if (petThought != null && petThought!.isNotEmpty) {
-      sprite = Stack(
-        clipBehavior: Clip.none,
-        children: [
-          sprite,
-          Positioned(
-            left: -108,
-            bottom: _petSize - 10,
-            child: IgnorePointer(
-              child: _PetThoughtBubble(text: petThought!),
-            ),
-          ),
-          Positioned(
-            left: 8,
-            bottom: _petSize - 22,
-            child: IgnorePointer(
-              child: _ThoughtDot(size: 10),
-            ),
-          ),
-          Positioned(
-            left: 19,
-            bottom: _petSize - 31,
-            child: IgnorePointer(
-              child: _ThoughtDot(size: 6),
-            ),
-          ),
-        ],
-      );
-    }
-
-    return Positioned(
-      left: left,
-      top: top - jumpLift - liftY - hopLift - bigJumpLift,
-      width: _petSize,
-      height: _petSize,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onPetTap,
-        onPanStart: (_) => onPetDragStart(),
-        onPanUpdate: (details) =>
-            onPetDragUpdate(details.delta, worldWidth, worldHeight),
-        onPanEnd: (_) => onPetDragEnd(),
-        child: sprite,
-      ),
-    );
-  }
-}
-
-/// 1 đốm bẩn (vệt nâu) cố định trên người pet khi dơ.
-class _DirtSpot {
-  final double dx, dy, size, opacity;
-  const _DirtSpot(this.dx, this.dy, this.size, this.opacity);
-}
-
-/// 1 con ruồi bay vòng quanh 1 điểm cố định trên người pet khi dơ.
-class _FlySpot {
-  final double baseLeft, baseTop, radius, phase, size;
-  const _FlySpot(
-      this.baseLeft, this.baseTop, this.radius, this.phase, this.size);
-}
-
-/// 1 mảng bọt xà phòng trắng (tĩnh, hơi phồng theo nhịp) bao quanh pet.
-class _FoamSpot {
-  final double dx, dy, size, opacity;
-  const _FoamSpot(this.dx, this.dy, this.size, this.opacity);
-}
-
-/// 1 bong bóng xà phòng nổi lên và biến mất, lệch pha với các bong bóng khác.
-class _BubbleSpot {
-  final double dx, baseTop, size, phase;
-  const _BubbleSpot(this.dx, this.baseTop, this.size, this.phase);
-}
-
-class _MiniStat extends StatelessWidget {
-  final IconData icon;
-  final int value;
-  final Color color;
-  const _MiniStat(
-      {required this.icon, required this.value, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 16, color: color),
-        const SizedBox(width: 4),
-        Text('$value',
-            style: TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 12,
-                fontWeight: FontWeight.bold)),
-      ]),
-    );
-  }
-}
-
-/// Bàn ăn — hiện tối đa 3 món đồ ăn đã mua cùng lúc, bấm mũi tên trái/phải
-/// để xem các món còn lại. Kéo 1 món lên phía trên (khu vực pet) để cho ăn
-/// — món ăn sẽ đi theo đúng vị trí con trỏ chuột trong lúc kéo (hành vi có
-/// sẵn của [Draggable]), giống cách cho ăn trong game Talking Tom.
-class _FoodTablePanel extends StatelessWidget {
-  final List<FoodTemplate> ownedFoods;
-  final int pageStart;
-  final VoidCallback? onPageLeft;
-  final VoidCallback? onPageRight;
-  final VoidCallback onClose;
-  final VoidCallback onGoShopping;
-
-  const _FoodTablePanel({
-    required this.ownedFoods,
-    required this.pageStart,
-    required this.onPageLeft,
-    required this.onPageRight,
-    required this.onClose,
-    required this.onGoShopping,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final visible = ownedFoods.skip(pageStart).take(3).toList();
-
-    return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF3E2723), // màu gỗ bàn ăn
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  const Text('🍽️ Bàn ăn',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14)),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.close,
-                        color: Colors.white70, size: 20),
-                    onPressed: onClose,
-                    tooltip: tr('Đóng bàn ăn'),
-                  ),
-                ],
-              ),
-              Expanded(
-                child: ownedFoods.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Text('Bạn chưa có đồ ăn nào!',
-                                style: TextStyle(
-                                    color: Colors.white70, fontSize: 12)),
-                            const SizedBox(height: 6),
-                            TextButton(
-                              onPressed: onGoShopping,
-                              child: const Text('Mua đồ ăn ở Cửa hàng 🛒'),
-                            ),
-                          ],
-                        ),
-                      )
-                    : Row(
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.chevron_left,
-                                color: Colors.white),
-                            onPressed: onPageLeft,
-                          ),
-                          Expanded(
-                            child: Row(
-                              children: List.generate(3, (i) {
-                                if (i >= visible.length)
-                                  return const Expanded(child: SizedBox());
-                                return Expanded(
-                                    child: _FoodSlot(food: visible[i]));
-                              }),
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.chevron_right,
-                                color: Colors.white),
-                            onPressed: onPageRight,
+                          const SizedBox(height: 8),
+                          HouseNeedsCard(
+                            pet: pet,
+                            trailing: HouseCoinPill(text: coinText),
                           ),
                         ],
                       ),
+                    ),
+                  ),
+                ),
               ),
-            ],
-          ),
+            ),
+            // 5) Cột tiện ích bên phải.
+            Positioned(
+              right: 12,
+              top: topReserve + 6,
+              child: Column(
+                children: [
+                  if (!widget.teacherMode) ...[
+                    HouseGlassButton(
+                      icon: Icons.favorite_rounded,
+                      color: const Color(0xFFFF6B8A),
+                      tooltip: tr('Thân thiết'),
+                      onTap: _openAffection,
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                  HouseGlassButton(
+                    emoji: '📋',
+                    tooltip: tr('Nhiệm vụ hằng ngày'),
+                    badge: ex.badgeCount,
+                    onTap: _openQuests,
+                  ),
+                  const SizedBox(height: 10),
+                  HouseGlassButton(
+                    emoji: '🪑',
+                    tooltip: tr('Trang trí phòng'),
+                    onTap: _toggleDecor,
+                  ),
+                  const SizedBox(height: 10),
+                  HouseGlassButton(
+                    emoji: '👕',
+                    tooltip: tr('Phòng đổi skin'),
+                    onTap: _openWardrobe,
+                  ),
+                ],
+              ),
+            ),
+            // 6) Banner chăm sóc nhanh.
+            if (quick != null)
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: bottomReserve + 8,
+                child: Center(
+                  child: HouseQuickBanner(
+                    emoji: quick.emoji,
+                    title: quick.title,
+                    actionLabel: quick.action,
+                    urgent: quick.urgent,
+                    onTap: quick.onTap,
+                  ),
+                ),
+              ),
+            // 7) Dock / khay đồ ăn / khay trang trí.
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                transitionBuilder: (child, anim) => SlideTransition(
+                  position: Tween<Offset>(
+                          begin: const Offset(0, 0.25), end: Offset.zero)
+                      .animate(anim),
+                  child: FadeTransition(opacity: anim, child: child),
+                ),
+                child: _decorMode
+                    ? HouseDecorPanel(
+                        key: const ValueKey('decor'),
+                        room: _room,
+                        extras: ex,
+                        placedInRoom: ex.placedIn(_room.type).length,
+                        coinText: coinText,
+                        canAfford: student.hasEnoughCoin,
+                        onPlace: _placeDecor,
+                        onBuy: _buyDecor,
+                        onDone: _toggleDecor,
+                      )
+                    : _showFoodTray
+                        ? HouseFoodTray(
+                            key: const ValueKey('food'),
+                            foods: ownedFoods,
+                            inventory: student.foodInventory,
+                            onFeed: _feed,
+                            onShop: () {
+                              setState(() => _showFoodTray = false);
+                              Navigator.of(context).push(MaterialPageRoute(
+                                builder: (_) => const ShopScreen(
+                                    initialCategory: ItemCategory.food),
+                              ));
+                            },
+                            onClose: () {
+                              setState(() => _showFoodTray = false);
+                              _restartIdleTimer();
+                            },
+                          )
+                        : HouseDock(
+                            key: const ValueKey('dock'),
+                            pet: pet,
+                            roomIndex: _roomIndex,
+                            busy: _busy,
+                            onRoom: _selectRoom,
+                            onFeed: _onFeedPressed,
+                            onBathe: _onBathePressed,
+                            onSleep: _onSleepPressed,
+                            onToilet: _useToilet,
+                            onPlay: _playWithPet,
+                            onActivities: _openActivitiesSheet,
+                          ),
+              ),
+            ),
+            // 8) Cảnh tắm và lớp phủ ngủ.
+            if (_showBath)
+              Positioned.fill(
+                child: HouseBathScene(
+                  pet: pet,
+                  bob: _bob,
+                  loop: _loop,
+                  jump: _jump,
+                  squash: _squash,
+                  progress: _bathProgress,
+                  rinsing: _bathRinsing,
+                  onScrub: _onScrub,
+                  onClose: _closeBath,
+                ),
+              ),
+            if (_sleeping)
+              Positioned.fill(
+                child: HouseSleepOverlay(
+                  progress: _sleepProgress,
+                  onWake: _wakeEarly,
+                ),
+              ),
+          ],
         ),
       ),
     );
   }
+
+  Widget _buildStage(PetModel pet, HouseExtras ex, double w, double h) {
+    final petSize = (w * 0.4).clamp(110.0, 168.0).toDouble();
+    final layers = <(double, Widget)>[];
+
+    for (final p in ex.placedIn(_room.type)) {
+      final def = DecorCatalog.byId(p.id);
+      if (def == null) continue;
+      layers.add((
+        p.y,
+        Positioned(
+          key: ValueKey('decor-${p.id}'),
+          left: p.x * w - def.size / 2 - 12,
+          top: p.y * h - def.size - 4,
+          child: _DecorItem(
+            decor: def,
+            editing: _decorMode,
+            onDrag: (d) => _moveDecor(p.id, d),
+            onDragEnd: () => _saveRoomDecor(_room.type),
+            onRemove: () => _removeDecor(p.id),
+          ),
+        ),
+      ));
+    }
+
+    if (!_showBath) {
+      layers.add((
+        _petPos.dy,
+        AnimatedPositioned(
+          key: const ValueKey('pet'),
+          duration: _walkDuration,
+          curve: Curves.easeInOut,
+          left: _petPos.dx * w - petSize / 2,
+          top: _petPos.dy * h - petSize * 0.92,
+          width: petSize,
+          height: petSize,
+          child: TweenAnimationBuilder<double>(
+            key: ValueKey('pet-pop-$_roomIndex'),
+            tween: Tween(begin: 0.6, end: 1.0),
+            duration: const Duration(milliseconds: 320),
+            curve: Curves.easeOutBack,
+            builder: (context, s, child) => Transform.scale(
+              scale: s,
+              alignment: Alignment.bottomCenter,
+              child: child,
+            ),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: _onPetTap,
+                    onPanStart: (_) => _onDragStart(),
+                    onPanUpdate: (d) => _onDragUpdate(d.delta),
+                    onPanEnd: (_) => _onDragEnd(),
+                    child: HousePetSprite(
+                      pet: pet,
+                      activity: _activity,
+                      facingRight: _facingRight,
+                      size: petSize,
+                      bob: _bob,
+                      loop: _loop,
+                      jump: _jump,
+                      squash: _squash,
+                    ),
+                  ),
+                ),
+                if (_thought != null && !_sleeping)
+                  Positioned(
+                    left: petSize / 2 - 100,
+                    bottom: petSize * 0.92,
+                    width: 200,
+                    child: IgnorePointer(child: _ThoughtBubble(text: _thought!)),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ));
+    }
+
+    layers.sort((a, b) => a.$1.compareTo(b.$1));
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [for (final l in layers) l.$2],
+    );
+  }
 }
 
-class _FoodSlot extends StatelessWidget {
-  final FoodTemplate food;
-  const _FoodSlot({required this.food});
+/// Việc gợi ý của banner "Chăm sóc nhanh".
+class _QuickCare {
+  final double score;
+  final String emoji;
+  final String title;
+  final String action;
+  final bool urgent;
+  final VoidCallback onTap;
+
+  const _QuickCare(
+      this.score, this.emoji, this.title, this.action, this.urgent, this.onTap);
+}
+
+/// 1 món nội thất trong phòng; ở chế độ trang trí thì kéo được và có nút ✕.
+class _DecorItem extends StatelessWidget {
+  final DecorTemplate decor;
+  final bool editing;
+  final ValueChanged<Offset> onDrag;
+  final VoidCallback onDragEnd;
+  final VoidCallback onRemove;
+
+  const _DecorItem({
+    required this.decor,
+    required this.editing,
+    required this.onDrag,
+    required this.onDragEnd,
+    required this.onRemove,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final content = _FoodSlotContent(food: food);
-    return Center(
-      child: Draggable<FoodTemplate>(
-        data: food,
-        feedback: Material(
-          color: Colors.transparent,
-          child: Image.asset(food.assetPath, width: 76, height: 76),
-        ),
-        childWhenDragging: Opacity(opacity: 0.25, child: content),
-        child: content,
+    final body = Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      child: Container(
+        padding: const EdgeInsets.all(2),
+        decoration: editing
+            ? BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.85), width: 1.5),
+                color: Colors.white.withValues(alpha: 0.12),
+              )
+            : null,
+        child: Text(decor.emoji,
+            style: TextStyle(fontSize: decor.size, height: 1.05)),
+      ),
+    );
+    if (!editing) return IgnorePointer(child: body);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onPanUpdate: (d) => onDrag(d.delta),
+      onPanEnd: (_) => onDragEnd(),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          body,
+          Positioned(
+            top: 0,
+            right: 0,
+            child: GestureDetector(
+              onTap: onRemove,
+              child: Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
+                  color: AppColors.danger,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 1.5),
+                ),
+                child: const Icon(Icons.close_rounded,
+                    size: 15, color: Colors.white),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _FoodSlotContent extends StatelessWidget {
-  final FoodTemplate food;
-  const _FoodSlotContent({required this.food});
+/// Bong bóng suy nghĩ của pet.
+class _ThoughtBubble extends StatelessWidget {
+  final String text;
+
+  const _ThoughtBubble({required this.text});
 
   @override
   Widget build(BuildContext context) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Image.asset(food.assetPath, width: 56, height: 56, fit: BoxFit.contain),
-        const SizedBox(height: 4),
-        Text(
-          food.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-              color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.16),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2)),
+            ],
+          ),
+          child: Text(text,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary)),
+        ),
+        const SizedBox(height: 3),
+        Container(
+          width: 9,
+          height: 9,
+          decoration: const BoxDecoration(
+              color: Colors.white, shape: BoxShape.circle),
+        ),
+        const SizedBox(height: 2),
+        Container(
+          width: 5,
+          height: 5,
+          decoration: const BoxDecoration(
+              color: Colors.white, shape: BoxShape.circle),
         ),
       ],
-    );
-  }
-}
-
-/// Khay dụng cụ tắm — 2 món kéo-thả: xà phòng (chà nổi bọt) và vòi nước
-/// (xịt rửa, chỉ dùng được khi đã đủ bọt). Không dùng ảnh riêng (chưa có
-/// asset), dùng emoji cho gọn và không lo thiếu file ảnh.
-class _BathToolsPanel extends StatelessWidget {
-  final int soapCount;
-  final int requiredScrubs;
-  final bool soapReady;
-  final bool hoseReady;
-  final VoidCallback onClose;
-
-  const _BathToolsPanel({
-    required this.soapCount,
-    required this.requiredScrubs,
-    required this.soapReady,
-    required this.hoseReady,
-    required this.onClose,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF1B4965), // xanh nước biển, gợi nhà tắm
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Text(
-                    soapReady
-                        ? '🧼 Kéo xà phòng chà lên pet ($soapCount/$requiredScrubs)'
-                        : '🚿 Đủ bọt rồi! Kéo vòi nước xịt rửa nào',
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12.5),
-                  ),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.close,
-                        color: Colors.white70, size: 20),
-                    onPressed: onClose,
-                    tooltip: tr('Đóng'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Expanded(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _BathTool(
-                      emoji: '🧼',
-                      label: 'Xà phòng',
-                      data: 'soap',
-                      enabled: soapReady,
-                    ),
-                    _BathTool(
-                      emoji: '🚿',
-                      label: 'Vòi nước',
-                      data: 'hose',
-                      enabled: hoseReady,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 1 dụng cụ kéo-thả (xà phòng hoặc vòi nước) trong khay tắm. Khi chưa
-/// dùng được ([enabled] = false) thì hiển thị mờ đi và không kéo được,
-/// tránh học sinh xịt nước trước khi đủ bọt.
-class _BathTool extends StatelessWidget {
-  final String emoji;
-  final String label;
-  final String data;
-  final bool enabled;
-
-  const _BathTool({
-    required this.emoji,
-    required this.label,
-    required this.data,
-    required this.enabled,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final content = Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(emoji, style: const TextStyle(fontSize: 40)),
-        const SizedBox(height: 4),
-        Text(label,
-            style: const TextStyle(
-                color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
-      ],
-    );
-
-    if (!enabled) {
-      return Opacity(opacity: 0.3, child: content);
-    }
-
-    return Draggable<String>(
-      data: data,
-      feedback: Material(
-        color: Colors.transparent,
-        child: Text(emoji, style: const TextStyle(fontSize: 56)),
-      ),
-      childWhenDragging: Opacity(opacity: 0.25, child: content),
-      child: content,
-    );
-  }
-}
-
-/// Pet phóng to nổi bật trong cảnh tắm — hiện lớp bọt xà phòng tăng dần
-/// theo số lần đã chà, và hiệu ứng nước bắn tung toé khi đang xịt rửa.
-class _BathSpotlightPet extends StatelessWidget {
-  final PetModel pet;
-  final Animation<double> idleBobController;
-  final Animation<double> bathController;
-  final int soapCount;
-  final int requiredScrubs;
-  final bool isRinsing;
-
-  const _BathSpotlightPet({
-    required this.pet,
-    required this.idleBobController,
-    required this.bathController,
-    required this.soapCount,
-    required this.requiredScrubs,
-    required this.isRinsing,
-  });
-
-  static const _size = 260.0;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: Listenable.merge([idleBobController, bathController]),
-      builder: (context, _) {
-        final bob = sin(idleBobController.value * pi) * 8;
-        // Mỗi lần chà xà phòng, bathController chạy 1 nhịp 0→1 khiến bọt
-        // "phù" phồng lên rồi lắng xuống nhẹ — pop hiệu ứng cho vui mắt.
-        final popScale = isRinsing ? 1.0 : 1 + sin(bathController.value * pi) * 0.15;
-        return SizedBox(
-          width: _size,
-          height: _size + 40,
-          child: Stack(
-            alignment: Alignment.center,
-            clipBehavior: Clip.none,
-            children: [
-              Transform.translate(
-                offset: Offset(0, -bob),
-                child: SizedBox(
-                  width: _size,
-                  height: _size,
-                  child:
-                      Image.asset(pet.idleAsset, fit: BoxFit.contain),
-                ),
-              ),
-              // Bọt xà phòng — số lượng bong bóng tăng dần theo soapCount,
-              // mờ dần đi khi đang xịt rửa (isRinsing).
-              if (soapCount > 0)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: AnimatedOpacity(
-                      opacity: isRinsing ? 0.0 : 1.0,
-                      duration: const Duration(milliseconds: 900),
-                      child: Transform.scale(
-                        scale: popScale,
-                        child: Center(
-                          child: Wrap(
-                            alignment: WrapAlignment.center,
-                            spacing: 4,
-                            children: List.generate(
-                              soapCount * 3,
-                              (i) => Text(
-                                '🫧',
-                                style: TextStyle(
-                                    fontSize: 16 + (i % 3) * 6.0),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              // Hiệu ứng nước xịt khi đang rửa.
-              if (isRinsing)
-                const Positioned(
-                  top: -6,
-                  child: Text('💦💦💦', style: TextStyle(fontSize: 28)),
-                ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-/// Hiệu ứng vụn đồ ăn rơi xuống khi pet đang nhai — tự chạy 1 lần khi được
-/// dựng lên, không cần AnimationController riêng.
-/// Pet phóng to hiển thị nổi bật khi ngồi vào bàn ăn — thay cho việc chỉ
-/// nhìn thấy pet mờ nhạt phía sau lớp blur. Có nhịp bập bênh nhẹ lúc rảnh,
-/// và lắc nhóp nhép + hiệu ứng vụn bánh/poof ngay trên người khi đang ăn.
-class _FeedingSpotlightPet extends StatelessWidget {
-  final PetModel pet;
-  final bool isEating;
-  final Animation<double> idleBobController;
-  final Animation<double> eatController;
-  final bool showCrumbs;
-  final bool showPoof;
-
-  const _FeedingSpotlightPet({
-    required this.pet,
-    required this.isEating,
-    required this.idleBobController,
-    required this.eatController,
-    required this.showCrumbs,
-    required this.showPoof,
-  });
-
-  static const _size = 260.0;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: Listenable.merge([idleBobController, eatController]),
-      builder: (context, _) {
-        final bob = isEating
-            ? 0.0
-            : sin(idleBobController.value * pi) * 8; // bập bênh khi rảnh
-        final chew = isEating ? eatController.value : 0.0;
-        final scaleX = 1 + chew * 0.08;
-        final scaleY = 1 - chew * 0.08;
-        return SizedBox(
-          width: _size,
-          height: _size + 40,
-          child: Stack(
-            alignment: Alignment.center,
-            clipBehavior: Clip.none,
-            children: [
-              Transform.translate(
-                offset: Offset(0, -bob),
-                child: Transform.scale(
-                  scaleX: scaleX,
-                  scaleY: scaleY,
-                  child: SizedBox(
-                    width: _size,
-                    height: _size,
-                    child:
-                        Image.asset(pet.idleAsset, fit: BoxFit.contain),
-                  ),
-                ),
-              ),
-              if (isEating)
-                const Positioned(
-                  top: -6,
-                  child: Text('🍗', style: TextStyle(fontSize: 32)),
-                ),
-              if (showCrumbs)
-                const Positioned(bottom: 30, child: _CrumbEffect()),
-              if (showPoof) const Positioned(top: 40, child: _PoofEffect()),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _CrumbEffect extends StatelessWidget {
-  const _CrumbEffect();
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: TweenAnimationBuilder<double>(
-        tween: Tween(begin: 0, end: 1),
-        duration: const Duration(milliseconds: 1200),
-        builder: (context, t, child) {
-          return Opacity(
-            opacity: 1 - t,
-            child: Transform.translate(
-              offset: Offset(0, t * 36),
-              child: const Text('🍞 ✨ 🍞', style: TextStyle(fontSize: 22)),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-/// Hiệu ứng "biến mất" khi món ăn được đưa cho pet thành công.
-class _PoofEffect extends StatelessWidget {
-  const _PoofEffect();
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: TweenAnimationBuilder<double>(
-        tween: Tween(begin: 0, end: 1),
-        duration: const Duration(milliseconds: 500),
-        builder: (context, t, child) {
-          return Opacity(
-            opacity: 1 - t,
-            child: Transform.scale(
-              scale: 0.6 + t * 0.8,
-              child: const Text('💨 ✨', style: TextStyle(fontSize: 30)),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-/// Thanh tiền tệ nhỏ dành riêng cho Nhà pet giáo viên.
-/// Chỉ giữ emoji và số để không che phần căn phòng phía sau.
-class _TeacherCurrencyBar extends StatelessWidget {
-  final StudentModel student;
-
-  const _TeacherCurrencyBar({required this.student});
-
-  @override
-  Widget build(BuildContext context) {
-    final gemText = student.gemInfinite ? '∞' : '${student.gem}';
-    final coinText = student.coinInfinite ? '∞' : '${student.coin}';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.85),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _TeacherCurrencyPill(
-            icon: '💎',
-            value: gemText,
-            color: const Color(0xFF59C3E3),
-          ),
-          const SizedBox(width: 5),
-          _TeacherCurrencyPill(
-            icon: '🪙',
-            value: coinText,
-            color: const Color(0xFFFFB84D),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TeacherCurrencyPill extends StatelessWidget {
-  final String icon;
-  final String value;
-  final Color color;
-
-  const _TeacherCurrencyPill({
-    required this.icon,
-    required this.value,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.16),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          EmojiIcon(icon, size: 22),
-          const SizedBox(width: 4),
-          Text(
-            value,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Cột tiện ích icon-only dành cho giáo viên.
-/// Cả Phòng đổi skin và Đổi nhà được đặt cùng cột với ba tiện ích chính.
-class _TeacherQuickMenu extends StatelessWidget {
-  final VoidCallback onWardrobe;
-  final VoidCallback onChangeHouse;
-
-  const _TeacherQuickMenu({
-    required this.onWardrobe,
-    required this.onChangeHouse,
-  });
-
-  void _open(BuildContext context, Widget page) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 9),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.88),
-        borderRadius: BorderRadius.circular(21),
-        border: Border.all(color: AppColors.primary.withValues(alpha: 0.15)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _TeacherIconButton(
-            emoji: '🛒',
-            tooltip: tr('Cửa hàng'),
-            onTap: () => _open(context, const ShopScreen()),
-          ),
-          const SizedBox(height: 7),
-          _TeacherIconButton(
-            emoji: '🎮',
-            tooltip: tr('Mini game — chơi để kiếm xu'),
-            onTap: () => _open(context, const MiniGameHubScreen()),
-          ),
-          const SizedBox(height: 7),
-          _TeacherIconButton(
-            emoji: '🏆',
-            tooltip: tr('Bảng xếp hạng'),
-            onTap: () => _open(context, const LeaderboardScreen()),
-          ),
-          const SizedBox(height: 7),
-          _TeacherIconButton(
-            emoji: '👕',
-            tooltip: tr('Phòng đổi skin'),
-            onTap: onWardrobe,
-          ),
-          const SizedBox(height: 7),
-          _TeacherIconButton(
-            emoji: '🏠',
-            tooltip: tr('Đổi nhà'),
-            onTap: onChangeHouse,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TeacherIconButton extends StatelessWidget {
-  final String emoji;
-  final String tooltip;
-  final VoidCallback onTap;
-
-  const _TeacherIconButton({
-    required this.emoji,
-    required this.tooltip,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: AppColors.primary.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(15),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(15),
-          child: SizedBox(
-            width: 46,
-            height: 46,
-            child: Center(
-              child: EmojiIcon(emoji, size: 32),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PetThoughtBubble extends StatelessWidget {
-  final String text;
-
-  const _PetThoughtBubble({required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 300),
-      child: Container(
-        key: ValueKey(text),
-        constraints: const BoxConstraints(maxWidth: 230),
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.92),
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: const [
-            BoxShadow(
-                color: Colors.black38, blurRadius: 10, offset: Offset(0, 4)),
-          ],
-        ),
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: Color(0xFF333344),
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Icon thanh chọn phòng / nút hành động theo loại phòng (Material icons đồng
-/// bộ, vì icon.zip không có icon giường/bồn tắm/bàn ăn).
-IconData _roomIcon(RoomType type) {
-  switch (type) {
-    case RoomType.bedroom:
-      return Icons.bed_rounded;
-    case RoomType.bathroom:
-      return Icons.bathtub_rounded;
-    case RoomType.dining:
-      return Icons.restaurant_rounded;
-  }
-}
-
-IconData _roomActionIcon(RoomType type) {
-  switch (type) {
-    case RoomType.bedroom:
-      return Icons.bedtime_rounded;
-    case RoomType.bathroom:
-      return Icons.shower_rounded;
-    case RoomType.dining:
-      return Icons.restaurant_menu_rounded;
-  }
-}
-
-class _HouseQuickActionButton extends StatelessWidget {
-  final Widget icon;
-  final String label;
-  final VoidCallback? onPressed;
-
-  const _HouseQuickActionButton({
-    required this.icon,
-    required this.label,
-    required this.onPressed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ElevatedButton.icon(
-      onPressed: onPressed,
-      icon: icon,
-      label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-      style: ElevatedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        disabledBackgroundColor: Colors.black12,
-        disabledForegroundColor: Colors.black38,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      ),
-    );
-  }
-}
-
-class _ThoughtDot extends StatelessWidget {
-  final double size;
-
-  const _ThoughtDot({required this.size});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 1)),
-        ],
-      ),
     );
   }
 }

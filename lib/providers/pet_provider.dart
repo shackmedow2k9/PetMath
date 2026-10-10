@@ -109,8 +109,7 @@ class PetProvider extends ChangeNotifier {
     if (current == null) {
       return Future.error(const SkinBoxException(SkinBoxError.missingData));
     }
-    return _firestoreService.openSkinBox(
-        studentId: studentId, petId: current.id);
+    return _firestoreService.openSkinBox(studentId: studentId, petId: current.id);
   }
 
   Future<bool> equipSkin(String skinId) async {
@@ -124,8 +123,7 @@ class PetProvider extends ChangeNotifier {
     final current = pet;
     if (current == null) return false;
     try {
-      return await _firestoreService.markFriendshipCelebrated(
-          current.id, level);
+      return await _firestoreService.markFriendshipCelebrated(current.id, level);
     } catch (_) {
       return false;
     }

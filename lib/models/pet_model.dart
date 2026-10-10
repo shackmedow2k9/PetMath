@@ -317,7 +317,8 @@ class PetModel {
       equippedItemIds: equippedItemIds ?? this.equippedItemIds,
       isRare: isRare ?? this.isRare,
       lastFedAt: lastFedAt ?? this.lastFedAt,
-      petInteractionsToday: petInteractionsToday ?? this.petInteractionsToday,
+      petInteractionsToday:
+          petInteractionsToday ?? this.petInteractionsToday,
       lastPetInteractionAt: lastPetInteractionAt ?? this.lastPetInteractionAt,
       affectionPoints: affectionPoints ?? this.affectionPoints,
       lastDecayAt: lastDecayAt ?? this.lastDecayAt,
@@ -352,7 +353,8 @@ extension PetFriendship on PetModel {
 
 extension PetSpeciesAsset on PetSpecies {
   /// Ảnh minh họa loài (pet cấp 1) lấy từ assets/pets_v2/<họ>/.
-  String get assetPath => PetArt.stageIdle(PetFamilyCatalog.familyOf(this), 1);
+  String get assetPath =>
+      PetArt.stageIdle(PetFamilyCatalog.familyOf(this), 1);
 
   String get displayName => _petDisplayNames[index];
 }
